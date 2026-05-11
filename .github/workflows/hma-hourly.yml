@@ -3,20 +3,68 @@ name: HMA Hourly Demo
 on:
   schedule:
     - cron: "0 * * * *"
+
   workflow_dispatch:
+    inputs:
+      client_number:
+        description: "Cliente o número de cliente"
+        required: false
+        default: "CLIENTE-DEMO-0001"
+        type: string
+
+      report_suffix:
+        description: "Sufijo final del reporte"
+        required: false
+        default: "JPPQ"
+        type: string
+
+      report_timezone:
+        description: "Zona horaria del reporte"
+        required: false
+        default: "America/Argentina/Cordoba"
+        type: string
+
+      data_source:
+        description: "Fuente de datos solicitada"
+        required: false
+        default: "simulated"
+        type: choice
+        options:
+          - simulated
+          - google_ads
+          - meta_ads
+          - multi_platform
+
+      cpa_threshold:
+        description: "Umbral de CPA"
+        required: false
+        default: "25"
+        type: string
+
+      roas_threshold:
+        description: "Umbral de ROAS"
+        required: false
+        default: "1.5"
+        type: string
+
+      ctr_threshold:
+        description: "Umbral de CTR"
+        required: false
+        default: "1.0"
+        type: string
 
 jobs:
   run-hma-demo:
     runs-on: ubuntu-latest
 
     env:
-      DATA_SOURCE: ${{ vars.DATA_SOURCE || 'simulated' }}
-      CLIENT_NUMBER: ${{ vars.CLIENT_NUMBER || 'CLIENTE-DEMO-0001' }}
-      REPORT_SUFFIX: ${{ vars.REPORT_SUFFIX || 'JPPQ' }}
-      REPORT_TIMEZONE: ${{ vars.REPORT_TIMEZONE || 'America/Argentina/Cordoba' }}
-      CPA_THRESHOLD: ${{ vars.CPA_THRESHOLD || '25' }}
-      ROAS_THRESHOLD: ${{ vars.ROAS_THRESHOLD || '1.5' }}
-      CTR_THRESHOLD: ${{ vars.CTR_THRESHOLD || '1.0' }}
+      DATA_SOURCE: ${{ inputs.data_source || vars.DATA_SOURCE || 'simulated' }}
+      CLIENT_NUMBER: ${{ inputs.client_number || vars.CLIENT_NUMBER || 'CLIENTE-DEMO-0001' }}
+      REPORT_SUFFIX: ${{ inputs.report_suffix || vars.REPORT_SUFFIX || 'JPPQ' }}
+      REPORT_TIMEZONE: ${{ inputs.report_timezone || vars.REPORT_TIMEZONE || 'America/Argentina/Cordoba' }}
+      CPA_THRESHOLD: ${{ inputs.cpa_threshold || vars.CPA_THRESHOLD || '25' }}
+      ROAS_THRESHOLD: ${{ inputs.roas_threshold || vars.ROAS_THRESHOLD || '1.5' }}
+      CTR_THRESHOLD: ${{ inputs.ctr_threshold || vars.CTR_THRESHOLD || '1.0' }}
 
     steps:
       - name: Descargar repositorio
