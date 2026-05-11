@@ -21,6 +21,10 @@ CPA_THRESHOLD = float(os.getenv("CPA_THRESHOLD", 25))
 ROAS_THRESHOLD = float(os.getenv("ROAS_THRESHOLD", 1.5))
 CTR_THRESHOLD = float(os.getenv("CTR_THRESHOLD", 1.0))
 
+CLIENT_NUMBER = os.getenv("CLIENT_NUMBER", "CLIENTE-DEMO-0001")
+REPORT_SUFFIX = os.getenv("REPORT_SUFFIX", "JPPQ")
+
+
 logging.basicConfig(
     filename=LOGS_DIR / "hma.log",
     level=logging.INFO,
@@ -31,6 +35,31 @@ logging.basicConfig(
 def safe_div(numerator: float, denominator: float) -> float:
     """Evita división por cero."""
     return numerator / denominator if denominator else 0
+
+
+def sanitize_filename_part(value: str) -> str:
+    """Convierte un texto en una parte segura para nombre de archivo."""
+    return (
+        str(value)
+        .strip()
+        .replace(" ", "-")
+        .replace("/", "-")
+        .replace("\\", "-")
+        .replace(":", "-")
+        .replace('"', "")
+        .replace("'", "")
+        .replace("ñ", "n")
+        .replace("Ñ", "N")
+    )
+
+
+def build_report_basename(run_time: dt.datetime) -> str:
+    """Construye nombre seguro para archivo y artifact."""
+    safe_client = sanitize_filename_part(CLIENT_NUMBER)
+    safe_suffix = sanitize_filename_part(REPORT_SUFFIX)
+    timestamp = run_time.strftime("%Y-%m-%d_%H-%M")
+
+    return f"Campania_{safe_client}_{timestamp}_{safe_suffix}"
 
 
 def simulate_ads_data() -> pd.DataFrame:
@@ -109,18 +138,22 @@ def calculate_kpis(df: pd.DataFrame) -> pd.DataFrame:
         lambda row: safe_div(row["clicks"], row["impressions"]) * 100,
         axis=1,
     )
+
     df["cpc"] = df.apply(
         lambda row: safe_div(row["spend"], row["clicks"]),
         axis=1,
     )
+
     df["cvr"] = df.apply(
         lambda row: safe_div(row["conversions"], row["clicks"]) * 100,
         axis=1,
     )
+
     df["cpa"] = df.apply(
         lambda row: safe_div(row["spend"], row["conversions"]),
         axis=1,
     )
+
     df["roas"] = df.apply(
         lambda row: safe_div(row["revenue"], row["spend"]),
         axis=1,
@@ -191,14 +224,16 @@ def generate_alerts(latest: dict) -> list[str]:
     return alerts
 
 
-def classify_health(latest: dict, alerts: list[str]) -> str:
+def classify_health(alerts: list[str]) -> str:
     """Clasifica estado general del sistema."""
     critical_alerts = [alert for alert in alerts if "⚠️" in alert]
 
     if len(critical_alerts) >= 3:
         return "CRÍTICO"
+
     if len(critical_alerts) >= 1:
         return "ATENCIÓN"
+
     return "NORMAL"
 
 
@@ -213,7 +248,7 @@ def generate_markdown_report(df: pd.DataFrame) -> str:
     previous = summarize_hour(df, previous_timestamp)
 
     alerts = generate_alerts(latest)
-    health_status = classify_health(latest, alerts)
+    health_status = classify_health(alerts)
 
     spend_change = percentage_change(latest["spend"], previous["spend"])
     clicks_change = percentage_change(latest["clicks"], previous["clicks"])
@@ -226,6 +261,7 @@ def generate_markdown_report(df: pd.DataFrame) -> str:
 
     report = f"""# HMA — Reporte Horario de Campañas
 
+**Cliente:** {CLIENT_NUMBER}  
 **Fecha/Hora:** {latest["timestamp"].strftime("%Y-%m-%d %H:%M")}  
 **Estado general:** {health_status}  
 **Fuente actual:** datos simulados  
@@ -343,6 +379,10 @@ También se requiere definir:
 | Persistencia histórica externa | Pendiente |
 | Alertas externas | Pendiente |
 
+---
+
+**Sufijo de reporte:** {REPORT_SUFFIX}
+
 """
 
     return report
@@ -352,25 +392,31 @@ def main() -> None:
     logging.info("Inicio de ejecución HMA demo profesional.")
 
     try:
+        run_time = dt.datetime.now()
+        report_basename = build_report_basename(run_time)
+
         raw_df = simulate_ads_data()
         kpi_df = calculate_kpis(raw_df)
 
         report = generate_markdown_report(kpi_df)
 
         latest_report_path = REPORTS_DIR / "latest_hourly_report.md"
-        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        historical_report_path = REPORTS_DIR / f"hma_report_{timestamp}.md"
+        named_report_path = REPORTS_DIR / f"{report_basename}.md"
+        basename_marker_path = REPORTS_DIR / "report_basename.txt"
 
         latest_report_path.write_text(report, encoding="utf-8")
-        historical_report_path.write_text(report, encoding="utf-8")
+        named_report_path.write_text(report, encoding="utf-8")
+        basename_marker_path.write_text(report_basename, encoding="utf-8")
 
         logging.info("Reporte generado correctamente.")
         logging.info(f"Reporte latest: {latest_report_path}")
-        logging.info(f"Reporte histórico: {historical_report_path}")
+        logging.info(f"Reporte nombrado: {named_report_path}")
+        logging.info(f"Nombre base de artifact: {report_basename}")
 
         print(report)
         print(f"\nReporte latest generado en: {latest_report_path}")
-        print(f"Reporte histórico generado en: {historical_report_path}")
+        print(f"Reporte nombrado generado en: {named_report_path}")
+        print(f"Nombre base de artifact: {report_basename}")
 
     except Exception as exc:
         logging.exception(f"Error durante ejecución HMA: {exc}")
