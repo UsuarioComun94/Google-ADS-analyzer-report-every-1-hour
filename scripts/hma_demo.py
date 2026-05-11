@@ -21,6 +21,8 @@ EXPORTS_DIR.mkdir(exist_ok=True)
 
 load_dotenv(BASE_DIR / ".env")
 
+DATA_SOURCE = os.getenv("DATA_SOURCE", "simulated").strip().lower()
+
 CPA_THRESHOLD = float(os.getenv("CPA_THRESHOLD", 25))
 ROAS_THRESHOLD = float(os.getenv("ROAS_THRESHOLD", 1.5))
 CTR_THRESHOLD = float(os.getenv("CTR_THRESHOLD", 1.0))
@@ -28,6 +30,19 @@ CTR_THRESHOLD = float(os.getenv("CTR_THRESHOLD", 1.0))
 CLIENT_NUMBER = os.getenv("CLIENT_NUMBER", "CLIENTE-DEMO-0001")
 REPORT_SUFFIX = os.getenv("REPORT_SUFFIX", "JPPQ")
 REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "America/Argentina/Cordoba")
+
+GOOGLE_ADS_REQUIRED_ENV = [
+    "GOOGLE_ADS_CLIENT_ID",
+    "GOOGLE_ADS_CLIENT_SECRET",
+    "GOOGLE_ADS_DEVELOPER_TOKEN",
+    "GOOGLE_ADS_REFRESH_TOKEN",
+    "GOOGLE_ADS_CUSTOMER_ID",
+]
+
+META_ADS_REQUIRED_ENV = [
+    "META_ACCESS_TOKEN",
+    "META_AD_ACCOUNT_ID",
+]
 
 
 logging.basicConfig(
@@ -70,6 +85,64 @@ def build_report_basename(run_time: dt.datetime) -> str:
     timestamp = run_time.strftime("%Y-%m-%d_%H-%M")
 
     return f"Campania_{safe_client}_{timestamp}_{safe_suffix}"
+
+
+def missing_env_vars(required_vars: list[str]) -> list[str]:
+    """Devuelve variables requeridas que no están configuradas."""
+    return [var for var in required_vars if not os.getenv(var)]
+
+
+def build_connection_status() -> dict:
+    """Construye estado de conexión para APIs reales."""
+    missing_google = missing_env_vars(GOOGLE_ADS_REQUIRED_ENV)
+    missing_meta = missing_env_vars(META_ADS_REQUIRED_ENV)
+
+    google_ready = len(missing_google) == 0
+    meta_ready = len(missing_meta) == 0
+
+    real_api_execution_enabled = False
+
+    notes = []
+
+    if DATA_SOURCE == "simulated":
+        notes.append(
+            "El sistema está ejecutándose en modo simulado. No usa datos reales de APIs."
+        )
+    elif DATA_SOURCE == "google_ads":
+        notes.append(
+            "DATA_SOURCE solicita Google Ads, pero el extractor real todavía no está implementado."
+        )
+    elif DATA_SOURCE == "meta_ads":
+        notes.append(
+            "DATA_SOURCE solicita Meta Ads, pero el extractor real todavía no está implementado."
+        )
+    else:
+        notes.append(
+            f"DATA_SOURCE='{DATA_SOURCE}' no es un modo reconocido. Se mantiene ejecución simulada."
+        )
+
+    if not google_ready:
+        notes.append("Faltan credenciales para Google Ads API.")
+
+    if not meta_ready:
+        notes.append("Faltan credenciales para Meta Marketing API.")
+
+    return {
+        "requested_data_source": DATA_SOURCE,
+        "effective_data_source": "simulated_data",
+        "real_api_execution_enabled": real_api_execution_enabled,
+        "google_ads_ready": google_ready,
+        "meta_ads_ready": meta_ready,
+        "missing_google_ads_credentials": missing_google,
+        "missing_meta_ads_credentials": missing_meta,
+        "configured_google_ads_credentials": [
+            var for var in GOOGLE_ADS_REQUIRED_ENV if var not in missing_google
+        ],
+        "configured_meta_ads_credentials": [
+            var for var in META_ADS_REQUIRED_ENV if var not in missing_meta
+        ],
+        "notes": notes,
+    }
 
 
 def simulate_ads_data() -> pd.DataFrame:
@@ -255,7 +328,10 @@ def get_latest_campaigns(df: pd.DataFrame, latest_timestamp) -> pd.DataFrame:
     return latest_campaigns
 
 
-def generate_markdown_report(df: pd.DataFrame) -> tuple[str, dict, pd.DataFrame]:
+def generate_markdown_report(
+    df: pd.DataFrame,
+    connection_status: dict,
+) -> tuple[str, dict, pd.DataFrame]:
     """Genera reporte Markdown y devuelve también summary + campañas."""
     timestamps = sorted(df["timestamp"].unique(), reverse=True)
 
@@ -284,6 +360,7 @@ def generate_markdown_report(df: pd.DataFrame) -> tuple[str, dict, pd.DataFrame]
         "previous_timestamp": previous["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
         "health_status": health_status,
         "source": "simulated_data",
+        "requested_data_source": DATA_SOURCE,
         "mode": "technical_demo",
         "thresholds": {
             "cpa_threshold": CPA_THRESHOLD,
@@ -322,6 +399,7 @@ def generate_markdown_report(df: pd.DataFrame) -> tuple[str, dict, pd.DataFrame]
             "roas_change_pct": roas_change,
         },
         "alerts": alerts,
+        "connection_status": connection_status,
     }
 
     report = f"""# HMA — Reporte Horario de Campañas
@@ -330,7 +408,8 @@ def generate_markdown_report(df: pd.DataFrame) -> tuple[str, dict, pd.DataFrame]
 **Fecha/Hora:** {latest["timestamp"].strftime("%Y-%m-%d %H:%M")}  
 **Zona horaria:** {REPORT_TIMEZONE}  
 **Estado general:** {health_status}  
-**Fuente actual:** datos simulados  
+**Fuente efectiva:** datos simulados  
+**Fuente solicitada:** {DATA_SOURCE}  
 **Modo:** demo técnica  
 
 ---
@@ -406,7 +485,44 @@ Esta versión todavía no usa datos reales de Google Ads o Meta Ads. El módulo 
 
 ---
 
-## 6. Interpretación operativa
+## 6. Estado de conexión
+
+| Componente | Estado |
+|---|---|
+| DATA_SOURCE solicitado | {DATA_SOURCE} |
+| Fuente efectiva actual | simulated_data |
+| Ejecución real de APIs | {connection_status["real_api_execution_enabled"]} |
+| Google Ads listo | {connection_status["google_ads_ready"]} |
+| Meta Ads listo | {connection_status["meta_ads_ready"]} |
+
+### Credenciales faltantes — Google Ads
+
+"""
+
+    if connection_status["missing_google_ads_credentials"]:
+        for item in connection_status["missing_google_ads_credentials"]:
+            report += f"- {item}\n"
+    else:
+        report += "- Ninguna. Credenciales mínimas detectadas.\n"
+
+    report += "\n### Credenciales faltantes — Meta Ads\n\n"
+
+    if connection_status["missing_meta_ads_credentials"]:
+        for item in connection_status["missing_meta_ads_credentials"]:
+            report += f"- {item}\n"
+    else:
+        report += "- Ninguna. Credenciales mínimas detectadas.\n"
+
+    report += "\n### Notas de conexión\n\n"
+
+    for note in connection_status["notes"]:
+        report += f"- {note}\n"
+
+    report += f"""
+
+---
+
+## 7. Interpretación operativa
 
 - Si el CPA sube por encima de ${CPA_THRESHOLD:.2f}, el sistema marca alerta de eficiencia.
 - Si el ROAS cae por debajo de {ROAS_THRESHOLD:.2f}, el sistema marca alerta de rentabilidad.
@@ -415,7 +531,7 @@ Esta versión todavía no usa datos reales de Google Ads o Meta Ads. El módulo 
 
 ---
 
-## 7. Próxima fase
+## 8. Próxima fase
 
 Para convertir esta demo en sistema real se necesita reemplazar `simulate_ads_data()` por conectores reales:
 
@@ -433,7 +549,7 @@ También se requiere definir:
 
 ---
 
-## 8. Estado técnico
+## 9. Estado técnico
 
 | Componente | Estado |
 |---|---|
@@ -443,6 +559,7 @@ También se requiere definir:
 | Artifact descargable | OK |
 | CSV exportable | OK |
 | JSON exportable | OK |
+| Estado de conexión API | OK |
 | Datos reales API | Pendiente |
 | Persistencia histórica externa | Pendiente |
 | Alertas externas | Pendiente |
@@ -456,10 +573,15 @@ También se requiere definir:
     return report, summary, latest_campaigns
 
 
-def write_exports(summary: dict, latest_campaigns: pd.DataFrame) -> tuple[Path, Path]:
+def write_exports(
+    summary: dict,
+    latest_campaigns: pd.DataFrame,
+    connection_status: dict,
+) -> tuple[Path, Path, Path]:
     """Genera CSV y JSON para uso estructurado."""
     latest_metrics_path = EXPORTS_DIR / "latest_metrics.csv"
     latest_summary_path = EXPORTS_DIR / "latest_summary.json"
+    connection_status_path = EXPORTS_DIR / "connection_status.json"
 
     export_df = latest_campaigns.copy()
     export_df["timestamp"] = export_df["timestamp"].astype(str)
@@ -471,7 +593,12 @@ def write_exports(summary: dict, latest_campaigns: pd.DataFrame) -> tuple[Path, 
         encoding="utf-8",
     )
 
-    return latest_metrics_path, latest_summary_path
+    connection_status_path.write_text(
+        json.dumps(connection_status, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return latest_metrics_path, latest_summary_path, connection_status_path
 
 
 def main() -> None:
@@ -481,10 +608,15 @@ def main() -> None:
         run_time = get_local_now()
         report_basename = build_report_basename(run_time)
 
+        connection_status = build_connection_status()
+
         raw_df = simulate_ads_data()
         kpi_df = calculate_kpis(raw_df)
 
-        report, summary, latest_campaigns = generate_markdown_report(kpi_df)
+        report, summary, latest_campaigns = generate_markdown_report(
+            df=kpi_df,
+            connection_status=connection_status,
+        )
 
         latest_report_path = REPORTS_DIR / "latest_hourly_report.md"
         named_report_path = REPORTS_DIR / f"{report_basename}.md"
@@ -494,26 +626,33 @@ def main() -> None:
         named_report_path.write_text(report, encoding="utf-8")
         basename_marker_path.write_text(report_basename, encoding="utf-8")
 
-        latest_metrics_path, latest_summary_path = write_exports(
+        latest_metrics_path, latest_summary_path, connection_status_path = write_exports(
             summary=summary,
             latest_campaigns=latest_campaigns,
+            connection_status=connection_status,
         )
 
         logging.info("Reporte generado correctamente.")
         logging.info(f"Reporte latest: {latest_report_path}")
         logging.info(f"Reporte nombrado: {named_report_path}")
         logging.info(f"CSV exportado: {latest_metrics_path}")
-        logging.info(f"JSON exportado: {latest_summary_path}")
+        logging.info(f"JSON summary exportado: {latest_summary_path}")
+        logging.info(f"JSON connection status exportado: {connection_status_path}")
         logging.info(f"Nombre base de artifact: {report_basename}")
         logging.info(f"Zona horaria del reporte: {REPORT_TIMEZONE}")
+        logging.info(f"Fuente solicitada: {DATA_SOURCE}")
+        logging.info("Fuente efectiva: simulated_data")
 
         print(report)
         print(f"\nReporte latest generado en: {latest_report_path}")
         print(f"Reporte nombrado generado en: {named_report_path}")
         print(f"CSV generado en: {latest_metrics_path}")
-        print(f"JSON generado en: {latest_summary_path}")
+        print(f"JSON summary generado en: {latest_summary_path}")
+        print(f"JSON connection status generado en: {connection_status_path}")
         print(f"Nombre base de artifact: {report_basename}")
         print(f"Zona horaria del reporte: {REPORT_TIMEZONE}")
+        print(f"Fuente solicitada: {DATA_SOURCE}")
+        print("Fuente efectiva: simulated_data")
 
     except Exception as exc:
         logging.exception(f"Error durante ejecución HMA: {exc}")
