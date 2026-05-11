@@ -3,6 +3,7 @@ import datetime as dt
 import random
 import os
 import logging
+import json
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -11,9 +12,11 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPORTS_DIR = BASE_DIR / "reports"
 LOGS_DIR = BASE_DIR / "logs"
+EXPORTS_DIR = BASE_DIR / "exports"
 
 REPORTS_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
+EXPORTS_DIR.mkdir(exist_ok=True)
 
 load_dotenv(BASE_DIR / ".env")
 
@@ -168,11 +171,11 @@ def summarize_hour(df: pd.DataFrame, timestamp) -> dict:
 
     summary = {
         "timestamp": timestamp,
-        "spend": hour_df["spend"].sum(),
-        "impressions": hour_df["impressions"].sum(),
-        "clicks": hour_df["clicks"].sum(),
-        "conversions": hour_df["conversions"].sum(),
-        "revenue": hour_df["revenue"].sum(),
+        "spend": float(hour_df["spend"].sum()),
+        "impressions": int(hour_df["impressions"].sum()),
+        "clicks": int(hour_df["clicks"].sum()),
+        "conversions": int(hour_df["conversions"].sum()),
+        "revenue": float(hour_df["revenue"].sum()),
     }
 
     summary["ctr"] = safe_div(summary["clicks"], summary["impressions"]) * 100
@@ -237,8 +240,16 @@ def classify_health(alerts: list[str]) -> str:
     return "NORMAL"
 
 
-def generate_markdown_report(df: pd.DataFrame) -> str:
-    """Genera reporte Markdown final."""
+def get_latest_campaigns(df: pd.DataFrame, latest_timestamp) -> pd.DataFrame:
+    """Devuelve el detalle por campaña de la última hora."""
+    latest_campaigns = df[df["timestamp"] == latest_timestamp].copy()
+    latest_campaigns = latest_campaigns.sort_values("spend", ascending=False)
+
+    return latest_campaigns
+
+
+def generate_markdown_report(df: pd.DataFrame) -> tuple[str, dict, pd.DataFrame]:
+    """Genera reporte Markdown y devuelve también summary + campañas."""
     timestamps = sorted(df["timestamp"].unique(), reverse=True)
 
     latest_timestamp = timestamps[0]
@@ -256,8 +267,54 @@ def generate_markdown_report(df: pd.DataFrame) -> str:
     cpa_change = percentage_change(latest["cpa"], previous["cpa"])
     roas_change = percentage_change(latest["roas"], previous["roas"])
 
-    latest_campaigns = df[df["timestamp"] == latest_timestamp].copy()
-    latest_campaigns = latest_campaigns.sort_values("spend", ascending=False)
+    latest_campaigns = get_latest_campaigns(df, latest_timestamp)
+
+    summary = {
+        "client_number": CLIENT_NUMBER,
+        "report_suffix": REPORT_SUFFIX,
+        "latest_timestamp": latest["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+        "previous_timestamp": previous["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
+        "health_status": health_status,
+        "source": "simulated_data",
+        "mode": "technical_demo",
+        "thresholds": {
+            "cpa_threshold": CPA_THRESHOLD,
+            "roas_threshold": ROAS_THRESHOLD,
+            "ctr_threshold": CTR_THRESHOLD,
+        },
+        "latest": {
+            "spend": latest["spend"],
+            "impressions": latest["impressions"],
+            "clicks": latest["clicks"],
+            "ctr": latest["ctr"],
+            "cpc": latest["cpc"],
+            "conversions": latest["conversions"],
+            "cvr": latest["cvr"],
+            "cpa": latest["cpa"],
+            "revenue": latest["revenue"],
+            "roas": latest["roas"],
+        },
+        "previous": {
+            "spend": previous["spend"],
+            "impressions": previous["impressions"],
+            "clicks": previous["clicks"],
+            "ctr": previous["ctr"],
+            "cpc": previous["cpc"],
+            "conversions": previous["conversions"],
+            "cvr": previous["cvr"],
+            "cpa": previous["cpa"],
+            "revenue": previous["revenue"],
+            "roas": previous["roas"],
+        },
+        "changes": {
+            "spend_change_pct": spend_change,
+            "clicks_change_pct": clicks_change,
+            "conversions_change_abs": conversions_change,
+            "cpa_change_pct": cpa_change,
+            "roas_change_pct": roas_change,
+        },
+        "alerts": alerts,
+    }
 
     report = f"""# HMA — Reporte Horario de Campañas
 
@@ -375,6 +432,8 @@ También se requiere definir:
 | GitHub Actions | OK |
 | Reporte Markdown | OK |
 | Artifact descargable | OK |
+| CSV exportable | OK |
+| JSON exportable | OK |
 | Datos reales API | Pendiente |
 | Persistencia histórica externa | Pendiente |
 | Alertas externas | Pendiente |
@@ -385,7 +444,25 @@ También se requiere definir:
 
 """
 
-    return report
+    return report, summary, latest_campaigns
+
+
+def write_exports(summary: dict, latest_campaigns: pd.DataFrame) -> tuple[Path, Path]:
+    """Genera CSV y JSON para uso estructurado."""
+    latest_metrics_path = EXPORTS_DIR / "latest_metrics.csv"
+    latest_summary_path = EXPORTS_DIR / "latest_summary.json"
+
+    export_df = latest_campaigns.copy()
+    export_df["timestamp"] = export_df["timestamp"].astype(str)
+
+    export_df.to_csv(latest_metrics_path, index=False, encoding="utf-8")
+
+    latest_summary_path.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return latest_metrics_path, latest_summary_path
 
 
 def main() -> None:
@@ -398,7 +475,7 @@ def main() -> None:
         raw_df = simulate_ads_data()
         kpi_df = calculate_kpis(raw_df)
 
-        report = generate_markdown_report(kpi_df)
+        report, summary, latest_campaigns = generate_markdown_report(kpi_df)
 
         latest_report_path = REPORTS_DIR / "latest_hourly_report.md"
         named_report_path = REPORTS_DIR / f"{report_basename}.md"
@@ -408,14 +485,23 @@ def main() -> None:
         named_report_path.write_text(report, encoding="utf-8")
         basename_marker_path.write_text(report_basename, encoding="utf-8")
 
+        latest_metrics_path, latest_summary_path = write_exports(
+            summary=summary,
+            latest_campaigns=latest_campaigns,
+        )
+
         logging.info("Reporte generado correctamente.")
         logging.info(f"Reporte latest: {latest_report_path}")
         logging.info(f"Reporte nombrado: {named_report_path}")
+        logging.info(f"CSV exportado: {latest_metrics_path}")
+        logging.info(f"JSON exportado: {latest_summary_path}")
         logging.info(f"Nombre base de artifact: {report_basename}")
 
         print(report)
         print(f"\nReporte latest generado en: {latest_report_path}")
         print(f"Reporte nombrado generado en: {named_report_path}")
+        print(f"CSV generado en: {latest_metrics_path}")
+        print(f"JSON generado en: {latest_summary_path}")
         print(f"Nombre base de artifact: {report_basename}")
 
     except Exception as exc:

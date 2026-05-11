@@ -29,17 +29,23 @@ jobs:
           pwd
           ls -la
           ls -la reports
+          ls -la exports
           test -f reports/latest_hourly_report.md
           test -f reports/report_basename.txt
+          test -f exports/latest_metrics.csv
+          test -f exports/latest_summary.json
 
       - name: Definir nombre del artifact
         run: |
           echo "REPORT_ARTIFACT_NAME=$(cat reports/report_basename.txt)" >> "$GITHUB_ENV"
 
-      - name: Guardar reportes como artifact
+      - name: Guardar reportes y exports como artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.REPORT_ARTIFACT_NAME }}
-          path: reports/*.md
+          path: |
+            reports/*.md
+            exports/*.csv
+            exports/*.json
           if-no-files-found: error
           retention-days: 7
