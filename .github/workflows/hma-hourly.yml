@@ -24,9 +24,17 @@ jobs:
       - name: Ejecutar HMA demo
         run: python scripts/hma_demo.py
 
+      - name: Verificar archivos generados
+        run: |
+          pwd
+          ls -la
+          ls -la reports || true
+          test -f reports/latest_hourly_report.md
+
       - name: Guardar reporte como artifact
         uses: actions/upload-artifact@v4
         with:
           name: hma-hourly-report
           path: reports/latest_hourly_report.md
+          if-no-files-found: error
           retention-days: 7
