@@ -1,5 +1,6 @@
 from pathlib import Path
 import datetime as dt
+from zoneinfo import ZoneInfo
 import random
 import os
 import logging
@@ -26,6 +27,7 @@ CTR_THRESHOLD = float(os.getenv("CTR_THRESHOLD", 1.0))
 
 CLIENT_NUMBER = os.getenv("CLIENT_NUMBER", "CLIENTE-DEMO-0001")
 REPORT_SUFFIX = os.getenv("REPORT_SUFFIX", "JPPQ")
+REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "America/Argentina/Cordoba")
 
 
 logging.basicConfig(
@@ -33,6 +35,11 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
+
+
+def get_local_now() -> dt.datetime:
+    """Devuelve fecha/hora en la zona horaria configurada."""
+    return dt.datetime.now(ZoneInfo(REPORT_TIMEZONE))
 
 
 def safe_div(numerator: float, denominator: float) -> float:
@@ -74,7 +81,7 @@ def simulate_ads_data() -> pd.DataFrame:
     - fetch_google_ads_data()
     - fetch_meta_ads_data()
     """
-    now = dt.datetime.now().replace(minute=0, second=0, microsecond=0)
+    now = get_local_now().replace(minute=0, second=0, microsecond=0)
 
     campaigns = [
         {
@@ -272,6 +279,7 @@ def generate_markdown_report(df: pd.DataFrame) -> tuple[str, dict, pd.DataFrame]
     summary = {
         "client_number": CLIENT_NUMBER,
         "report_suffix": REPORT_SUFFIX,
+        "report_timezone": REPORT_TIMEZONE,
         "latest_timestamp": latest["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
         "previous_timestamp": previous["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
         "health_status": health_status,
@@ -320,6 +328,7 @@ def generate_markdown_report(df: pd.DataFrame) -> tuple[str, dict, pd.DataFrame]
 
 **Cliente:** {CLIENT_NUMBER}  
 **Fecha/Hora:** {latest["timestamp"].strftime("%Y-%m-%d %H:%M")}  
+**Zona horaria:** {REPORT_TIMEZONE}  
 **Estado general:** {health_status}  
 **Fuente actual:** datos simulados  
 **Modo:** demo técnica  
@@ -469,7 +478,7 @@ def main() -> None:
     logging.info("Inicio de ejecución HMA demo profesional.")
 
     try:
-        run_time = dt.datetime.now()
+        run_time = get_local_now()
         report_basename = build_report_basename(run_time)
 
         raw_df = simulate_ads_data()
@@ -496,6 +505,7 @@ def main() -> None:
         logging.info(f"CSV exportado: {latest_metrics_path}")
         logging.info(f"JSON exportado: {latest_summary_path}")
         logging.info(f"Nombre base de artifact: {report_basename}")
+        logging.info(f"Zona horaria del reporte: {REPORT_TIMEZONE}")
 
         print(report)
         print(f"\nReporte latest generado en: {latest_report_path}")
@@ -503,6 +513,7 @@ def main() -> None:
         print(f"CSV generado en: {latest_metrics_path}")
         print(f"JSON generado en: {latest_summary_path}")
         print(f"Nombre base de artifact: {report_basename}")
+        print(f"Zona horaria del reporte: {REPORT_TIMEZONE}")
 
     except Exception as exc:
         logging.exception(f"Error durante ejecución HMA: {exc}")
