@@ -9,6 +9,13 @@ jobs:
   run-hma-demo:
     runs-on: ubuntu-latest
 
+    env:
+      CLIENT_NUMBER: ${{ vars.CLIENT_NUMBER || 'CLIENTE-DEMO-0001' }}
+      REPORT_SUFFIX: ${{ vars.REPORT_SUFFIX || 'JPPQ' }}
+      CPA_THRESHOLD: ${{ vars.CPA_THRESHOLD || '25' }}
+      ROAS_THRESHOLD: ${{ vars.ROAS_THRESHOLD || '1.5' }}
+      CTR_THRESHOLD: ${{ vars.CTR_THRESHOLD || '1.0' }}
+
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
@@ -20,6 +27,14 @@ jobs:
 
       - name: Instalar dependencias
         run: pip install -r requirements.txt
+
+      - name: Mostrar configuración activa
+        run: |
+          echo "CLIENT_NUMBER=$CLIENT_NUMBER"
+          echo "REPORT_SUFFIX=$REPORT_SUFFIX"
+          echo "CPA_THRESHOLD=$CPA_THRESHOLD"
+          echo "ROAS_THRESHOLD=$ROAS_THRESHOLD"
+          echo "CTR_THRESHOLD=$CTR_THRESHOLD"
 
       - name: Ejecutar HMA demo
         run: python scripts/hma_demo.py
