@@ -6,19 +6,69 @@ $BaseDownloadDir = Join-Path $BaseProjectDir "downloads"
 $PythonExe = Join-Path $BaseProjectDir ".venv\Scripts\python.exe"
 $UpdateMasterScript = Join-Path $BaseProjectDir "scripts\update_hma_master.py"
 
+# Inicio limpio del histórico local.
+# El downloader ignorará cualquier run generado antes de esta fecha/hora local.
+$StartFromLocal = "2026-05-12T19:30:00"
+$StartFromDateTime = [datetime]::Parse($StartFromLocal)
+
 # Cantidad de runs recientes que se revisan para recuperar backlog.
 $LookbackRuns = 50
 
-# Si GitHub schedule no generó un run en la hora actual,
-# este script dispara workflow_dispatch para crear el reporte horario.
-$TriggerWorkflowIfMissingCurrentHour = $true
+# IMPORTANTE:
+# Render es el generador principal de reportes.
+# La PC local NO debe disparar workflows por defecto, solo descargar backlog.
+$TriggerWorkflowIfMissingCurrentHour = $false
 
 New-Item -ItemType Directory -Force -Path $BaseDownloadDir | Out-Null
 
-function Get-RecentRuns {
+function Convert-RunCreatedAtToLocal {
+    param([object]$Run)
+    return ([datetime]::Parse($Run.createdAt)).ToLocalTime()
+}
+
+function Is-RunEligible {
+    param([object]$Run)
+
+    try {
+        $createdLocal = Convert-RunCreatedAtToLocal -Run $Run
+        return ($createdLocal -ge $StartFromDateTime)
+    } catch {
+        return $false
+    }
+}
+
+function Set-GeneratedTimestamp {
     param(
-        [int]$Limit = 50
+        [string]$TargetPath,
+        [datetime]$GeneratedAt
     )
+
+    try {
+        if (-not (Test-Path -LiteralPath $TargetPath)) {
+            return
+        }
+
+        Get-ChildItem -LiteralPath $TargetPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $_.CreationTime = $GeneratedAt
+                $_.LastWriteTime = $GeneratedAt
+                $_.LastAccessTime = $GeneratedAt
+            } catch {
+                # No bloquear el flujo por metadatos.
+            }
+        }
+
+        $targetItem = Get-Item -LiteralPath $TargetPath -Force
+        $targetItem.CreationTime = $GeneratedAt
+        $targetItem.LastWriteTime = $GeneratedAt
+        $targetItem.LastAccessTime = $GeneratedAt
+    } catch {
+        Write-Host "No se pudo ajustar la fecha de modificación de: $TargetPath"
+    }
+}
+
+function Get-RecentRuns {
+    param([int]$Limit = 50)
 
     $runsJson = gh run list `
       --repo $Repo `
@@ -43,39 +93,8 @@ function Get-RecentRuns {
     return $runs
 }
 
-function Has-CurrentHourRun {
-    param(
-        [array]$Runs
-    )
-
-    $now = Get-Date
-    $currentHourStart = Get-Date -Year $now.Year -Month $now.Month -Day $now.Day -Hour $now.Hour -Minute 0 -Second 0
-
-    foreach ($run in $Runs) {
-        try {
-            $createdLocal = ([datetime]::Parse($run.createdAt)).ToLocalTime()
-        } catch {
-            continue
-        }
-
-        if ($createdLocal -ge $currentHourStart) {
-            if (
-                $run.status -eq "queued" -or
-                $run.status -eq "in_progress" -or
-                ($run.status -eq "completed" -and $run.conclusion -eq "success")
-            ) {
-                return $true
-            }
-        }
-    }
-
-    return $false
-}
-
 function Get-ArtifactCount {
-    param(
-        [string]$RunId
-    )
+    param([string]$RunId)
 
     try {
         $countText = gh api "repos/$Repo/actions/runs/$RunId/artifacts" --jq ".total_count" 2>$null
@@ -90,121 +109,16 @@ function Get-ArtifactCount {
     }
 }
 
+Write-Host "Inicio limpio configurado desde: $StartFromDateTime"
+Write-Host "Modo local: SOLO DESCARGA. La generación horaria corresponde a Render/GitHub."
 
-function Set-GeneratedTimestamp {
-    param(
-        [string]$TargetPath,
-        [datetime]$GeneratedAt
-    )
-
-    try {
-        if (-not (Test-Path -LiteralPath $TargetPath)) {
-            return
-        }
-
-        # Primero ajustar archivos y subcarpetas internas.
-        # Después ajustar la carpeta principal para que Windows Explorer muestre
-        # la hora de generación del run, no la hora local de descarga.
-        Get-ChildItem -LiteralPath $TargetPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
-            try {
-                $_.CreationTime = $GeneratedAt
-                $_.LastWriteTime = $GeneratedAt
-                $_.LastAccessTime = $GeneratedAt
-            } catch {
-                # No bloquear el flujo por metadatos de archivo.
-            }
-        }
-
-        $targetItem = Get-Item -LiteralPath $TargetPath -Force
-        $targetItem.CreationTime = $GeneratedAt
-        $targetItem.LastWriteTime = $GeneratedAt
-        $targetItem.LastAccessTime = $GeneratedAt
-    } catch {
-        Write-Host "No se pudo ajustar la fecha de modificación de: $TargetPath"
-    }
+if ((Get-Date) -lt $StartFromDateTime) {
+    Write-Host "Todavía no llegó la hora de inicio configurada."
+    Write-Host "No se descargan runs anteriores."
+    exit 0
 }
 
-function Trigger-Workflow-And-Wait {
-    Write-Host "No hay run exitoso/en curso para la hora actual."
-    Write-Host "Disparando GitHub Actions manualmente para generar reporte horario..."
-
-    $beforeRuns = Get-RecentRuns -Limit 5
-    $beforeIds = @{}
-    foreach ($run in $beforeRuns) {
-        $beforeIds[[string]$run.databaseId] = $true
-    }
-
-    gh workflow run $WorkflowFile `
-      --repo $Repo `
-      --ref main
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "No se pudo disparar el workflow."
-        return $null
-    }
-
-    $newRunId = $null
-
-    for ($i = 0; $i -lt 24; $i++) {
-        Start-Sleep -Seconds 5
-
-        $afterRuns = Get-RecentRuns -Limit 10
-
-        foreach ($run in $afterRuns) {
-            $candidateId = [string]$run.databaseId
-
-            if (-not $beforeIds.ContainsKey($candidateId)) {
-                if ($run.event -eq "workflow_dispatch") {
-                    $newRunId = $candidateId
-                    break
-                }
-            }
-        }
-
-        if ($newRunId) {
-            break
-        }
-
-        Write-Host "Esperando que GitHub cree el run nuevo..."
-    }
-
-    if (-not $newRunId) {
-        Write-Host "No se pudo identificar el nuevo run. Se continuará con descarga de backlog."
-        return $null
-    }
-
-    Write-Host "Run nuevo detectado: $newRunId"
-    Write-Host "Esperando finalización del run..."
-
-    gh run watch $newRunId `
-      --repo $Repo `
-      --exit-status `
-      --interval 5
-
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Run $newRunId finalizado correctamente."
-    } else {
-        Write-Host "El run $newRunId no finalizó correctamente. Se continuará con descarga de runs exitosos disponibles."
-    }
-
-    return $newRunId
-}
-
-Write-Host "Buscando runs recientes en GitHub Actions..."
-
-$InitialRuns = Get-RecentRuns -Limit $LookbackRuns
-
-if ($TriggerWorkflowIfMissingCurrentHour) {
-    $hasCurrentHourRun = Has-CurrentHourRun -Runs $InitialRuns
-
-    if ($hasCurrentHourRun) {
-        Write-Host "Ya existe un run exitoso/en curso para la hora actual. No se dispara otro."
-    } else {
-        Trigger-Workflow-And-Wait | Out-Null
-    }
-}
-
-Write-Host "Buscando runs exitosos recientes para recuperar backlog..."
+Write-Host "Buscando runs exitosos recientes para recuperar backlog elegible..."
 
 $RunsJson = gh run list `
   --repo $Repo `
@@ -223,6 +137,14 @@ $Runs = $RunsJson | ConvertFrom-Json
 if (-not $Runs -or $Runs.Count -eq 0) {
     Write-Host "No se encontraron runs exitosos para descargar."
     exit 1
+}
+
+$Runs = @($Runs | Where-Object { Is-RunEligible -Run $_ })
+
+if (-not $Runs -or $Runs.Count -eq 0) {
+    Write-Host "No hay runs elegibles desde $StartFromDateTime."
+    Write-Host "No se actualiza HMA_Master.xlsx porque no hay datos nuevos."
+    exit 0
 }
 
 # Procesar del más viejo al más nuevo para que el histórico quede natural.
@@ -246,7 +168,7 @@ foreach ($Run in $Runs) {
         Select-Object -First 1
 
     if ($ExistingRunFolder) {
-        $RunCreatedAtLocal = ([datetime]::Parse($Run.createdAt)).ToLocalTime()
+        $RunCreatedAtLocal = Convert-RunCreatedAtToLocal -Run $Run
         Set-GeneratedTimestamp -TargetPath $ExistingRunFolder.FullName -GeneratedAt $RunCreatedAtLocal
 
         Write-Host "Ya existe run $RunId. No se duplica:"
@@ -266,7 +188,7 @@ foreach ($Run in $Runs) {
         continue
     }
 
-    $RunCreatedAtLocal = ([datetime]::Parse($Run.createdAt)).ToLocalTime()
+    $RunCreatedAtLocal = Convert-RunCreatedAtToLocal -Run $Run
     $RunDay = $RunCreatedAtLocal.ToString("yyyy-MM-dd")
     $RunTime = $RunCreatedAtLocal.ToString("HH-mm")
 
@@ -281,6 +203,7 @@ foreach ($Run in $Runs) {
     Write-Host "Descargando run pendiente $RunId..."
     Write-Host "Evento: $($Run.event)"
     Write-Host "Creado: $($Run.createdAt)"
+    Write-Host "Hora local de generación: $RunCreatedAtLocal"
     Write-Host "Artifacts disponibles: $ArtifactCount"
     Write-Host "Destino: $DownloadDir"
 
@@ -309,14 +232,12 @@ foreach ($Run in $Runs) {
 }
 
 Write-Host "Resumen de recuperación:"
-Write-Host "Runs revisados: $($Runs.Count)"
+Write-Host "Runs elegibles revisados: $($Runs.Count)"
 Write-Host "Runs nuevos descargados: $DownloadedCount"
 Write-Host "Runs ya existentes omitidos: $SkippedCount"
 Write-Host "Runs sin artifact omitidos: $NoArtifactCount"
 Write-Host "Runs con error real: $FailedCount"
 
-# El Excel se reconstruye desde reportes horarios únicos.
-# No genera reportes nuevos. Solo consolida lo que ya existe en downloads/.
 if (Test-Path $PythonExe) {
     Write-Host "Actualizando HMA_Master.xlsx con reportes horarios únicos..."
     & $PythonExe $UpdateMasterScript
