@@ -53,6 +53,12 @@ on:
         default: "1.0"
         type: string
 
+      daily_budget_usd:
+        description: "Presupuesto diario de referencia en USD"
+        required: false
+        default: "30000"
+        type: string
+
 jobs:
   run-hma-demo:
     runs-on: ubuntu-latest
@@ -65,6 +71,7 @@ jobs:
       CPA_THRESHOLD: ${{ inputs.cpa_threshold || vars.CPA_THRESHOLD || '25' }}
       ROAS_THRESHOLD: ${{ inputs.roas_threshold || vars.ROAS_THRESHOLD || '1.5' }}
       CTR_THRESHOLD: ${{ inputs.ctr_threshold || vars.CTR_THRESHOLD || '1.0' }}
+      DAILY_BUDGET_USD: ${{ inputs.daily_budget_usd || vars.DAILY_BUDGET_USD || '30000' }}
 
     steps:
       - name: Descargar repositorio
@@ -87,6 +94,7 @@ jobs:
           echo "CPA_THRESHOLD=$CPA_THRESHOLD"
           echo "ROAS_THRESHOLD=$ROAS_THRESHOLD"
           echo "CTR_THRESHOLD=$CTR_THRESHOLD"
+          echo "DAILY_BUDGET_USD=$DAILY_BUDGET_USD"
 
       - name: Ejecutar HMA demo
         run: python scripts/hma_demo.py
