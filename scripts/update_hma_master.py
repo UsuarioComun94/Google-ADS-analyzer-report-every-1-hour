@@ -2,7 +2,8 @@ from pathlib import Path
 import json
 import math
 import re
-import datetime as dt
+import hashlib
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
@@ -15,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 HISTORY_DIR = BASE_DIR / "historico"
 MASTER_FILE = HISTORY_DIR / "HMA_Master.xlsx"
+FINGERPRINT_FILE = HISTORY_DIR / "HMA_Master.fingerprint.json"
 
 HISTORY_DIR.mkdir(exist_ok=True)
 
@@ -220,8 +222,6 @@ def find_artifact_runs() -> list[dict]:
             }
         )
 
-    # Deduplicación fuerte: si el mismo run aparece más de una vez, queda uno solo.
-    # Se conserva la primera carpeta ordenada por ruta para mantener comportamiento estable.
     unique = {}
     for run in sorted(raw_runs, key=lambda item: str(item["artifact_root"])):
         if run["dedupe_key"] not in unique:
@@ -336,7 +336,6 @@ def build_campaign_metrics(runs: list[dict]) -> pd.DataFrame:
         errors="coerce",
     )
 
-    # Evita duplicar campañas si el mismo artifact fue descargado varias veces.
     dedupe_cols = [
         "dedupe_key",
         "platform",
@@ -680,6 +679,56 @@ def build_creative_assets(campaign_df: pd.DataFrame) -> pd.DataFrame:
     return df[wanted_cols]
 
 
+def normalize_df_for_fingerprint(df: pd.DataFrame) -> list[dict]:
+    if df.empty:
+        return []
+
+    normalized = df.copy()
+    normalized = normalized.drop(columns=["timestamp_dt", "summary_timestamp_dt"], errors="ignore")
+    normalized = normalized.sort_index(axis=1)
+
+    for col in normalized.columns:
+        normalized[col] = normalized[col].astype(str).fillna("")
+
+    return normalized.to_dict(orient="records")
+
+
+def build_fingerprint(
+    hourly_df: pd.DataFrame,
+    campaign_df: pd.DataFrame,
+    comparison_df: pd.DataFrame,
+    recommendations_df: pd.DataFrame,
+    creative_df: pd.DataFrame,
+) -> str:
+    payload = {
+        "hourly_summary": normalize_df_for_fingerprint(hourly_df),
+        "campaign_metrics": normalize_df_for_fingerprint(campaign_df),
+        "metric_comparison": normalize_df_for_fingerprint(comparison_df),
+        "recommendations": normalize_df_for_fingerprint(recommendations_df),
+        "creative_assets": normalize_df_for_fingerprint(creative_df),
+    }
+
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def load_previous_fingerprint() -> str:
+    data = load_json_safely(FINGERPRINT_FILE)
+    return str(data.get("fingerprint", ""))
+
+
+def save_fingerprint(fingerprint: str, unique_runs: int):
+    payload = {
+        "fingerprint": fingerprint,
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "unique_runs": unique_runs,
+    }
+    FINGERPRINT_FILE.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def autosize_and_style(path: Path):
     wb = load_workbook(path)
 
@@ -737,44 +786,49 @@ def autosize_and_style(path: Path):
     wb.save(path)
 
 
-def write_master_workbook(
-    output_path: Path,
+def write_workbook(
+    path: Path,
     hourly_df: pd.DataFrame,
     campaign_df: pd.DataFrame,
     comparison_df: pd.DataFrame,
     recommendations_df: pd.DataFrame,
     creative_df: pd.DataFrame,
 ):
-    """Escribe el Excel maestro en una ruta dada."""
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
         hourly_df.to_excel(writer, sheet_name="hourly_summary", index=False)
         campaign_df.to_excel(writer, sheet_name="campaign_metrics", index=False)
         comparison_df.to_excel(writer, sheet_name="metric_comparison", index=False)
         recommendations_df.to_excel(writer, sheet_name="recommendations", index=False)
         creative_df.to_excel(writer, sheet_name="creative_assets", index=False)
 
-    autosize_and_style(output_path)
+    autosize_and_style(path)
 
 
-def finalize_master_file(temp_path: Path) -> tuple[Path, bool]:
-    """
-    Intenta reemplazar HMA_Master.xlsx con el archivo temporal.
+def cleanup_old_pending_files():
+    for pending in HISTORY_DIR.glob("HMA_Master_PENDING_*.xlsx"):
+        try:
+            pending.unlink()
+        except PermissionError:
+            pass
 
-    Si HMA_Master.xlsx está abierto en Excel, Windows suele bloquearlo.
-    En ese caso no se rompe el flujo: se guarda una copia PENDING con timestamp.
 
-    Devuelve:
-    - ruta final escrita
-    - True si tuvo que crear archivo PENDING
-    """
+def save_master_safely(temp_file: Path, fingerprint: str, unique_runs: int):
     try:
-        temp_path.replace(MASTER_FILE)
-        return MASTER_FILE, False
+        temp_file.replace(MASTER_FILE)
+        save_fingerprint(fingerprint, unique_runs=unique_runs)
+        cleanup_old_pending_files()
+        print(f"HMA Master actualizado correctamente: {MASTER_FILE}")
+        return
     except PermissionError:
-        timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        pending_path = HISTORY_DIR / f"HMA_Master_PENDING_{timestamp}.xlsx"
-        temp_path.replace(pending_path)
-        return pending_path, True
+        pending_name = f"HMA_Master_PENDING_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+        pending_file = HISTORY_DIR / pending_name
+        temp_file.replace(pending_file)
+
+        print("HMA_Master.xlsx está abierto o bloqueado.")
+        print("No se perdió la actualización.")
+        print(f"Se guardó una copia alternativa: {pending_file}")
+        print("Cuando cierres HMA_Master.xlsx, corré nuevamente el script para promover la actualización al archivo principal.")
+        return
 
 
 def main():
@@ -786,17 +840,9 @@ def main():
     recommendations_df = build_recommendations(hourly_df, comparison_df)
     creative_df = build_creative_assets(campaign_df)
 
-    temp_path = HISTORY_DIR / "HMA_Master__tmp.xlsx"
+    unique_runs = len(hourly_df) if not hourly_df.empty else 0
 
-    if temp_path.exists():
-        try:
-            temp_path.unlink()
-        except PermissionError:
-            timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            temp_path = HISTORY_DIR / f"HMA_Master__tmp_{timestamp}.xlsx"
-
-    write_master_workbook(
-        output_path=temp_path,
+    fingerprint = build_fingerprint(
         hourly_df=hourly_df,
         campaign_df=campaign_df,
         comparison_df=comparison_df,
@@ -804,16 +850,26 @@ def main():
         creative_df=creative_df,
     )
 
-    final_path, used_pending = finalize_master_file(temp_path)
+    previous_fingerprint = load_previous_fingerprint()
 
-    unique_runs = len(hourly_df) if not hourly_df.empty else 0
+    if MASTER_FILE.exists() and fingerprint == previous_fingerprint:
+        print("No hay reportes horarios nuevos ni cambios analíticos.")
+        print("No se actualiza HMA_Master.xlsx y no se crea PENDING.")
+        print(f"Registros horarios únicos actuales: {unique_runs}")
+        return
 
-    if used_pending:
-        print("HMA_Master.xlsx estaba abierto o bloqueado.")
-        print(f"Se guardó una copia alternativa: {final_path}")
-        print("Cerrá HMA_Master.xlsx y luego podés reemplazarlo manualmente por esta copia si corresponde.")
-    else:
-        print(f"HMA Master actualizado correctamente: {final_path}")
+    temp_file = HISTORY_DIR / f"_HMA_Master_BUILDING_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+    write_workbook(
+        path=temp_file,
+        hourly_df=hourly_df,
+        campaign_df=campaign_df,
+        comparison_df=comparison_df,
+        recommendations_df=recommendations_df,
+        creative_df=creative_df,
+    )
+
+    save_master_safely(temp_file, fingerprint=fingerprint, unique_runs=unique_runs)
 
     print(f"Artifacts únicos procesados: {len(runs)}")
     print(f"Registros horarios únicos en Excel: {unique_runs}")
