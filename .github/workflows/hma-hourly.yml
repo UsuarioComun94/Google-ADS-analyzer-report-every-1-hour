@@ -1,6 +1,10 @@
 name: HMA Hourly Demo
 
 on:
+  # Intento principal a la hora exacta y retry a los 5 minutos.
+  # GitHub puede demorar el arranque real, pero el target lógico es la hora exacta.
+  schedule:
+    - cron: "0,5 * * * *"
 
   workflow_dispatch:
     inputs:
@@ -57,6 +61,14 @@ on:
         default: "30000"
         type: string
 
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: hma-hourly-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   run-hma-demo:
     runs-on: ubuntu-latest
@@ -80,10 +92,43 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Gate anti-duplicado horario
+        id: hourly_gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_WORKFLOW_FILE: hma-hourly.yml
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          REPORT_TIMEZONE: ${{ env.REPORT_TIMEZONE }}
+        run: python scripts/hma_github_hourly_gate.py
+
+      - name: Reporte de decisión del gate
+        if: always()
+        run: |
+          {
+            echo "## HMA Scheduler Decision"
+            echo ""
+            echo "- Workflow run id: ${{ github.run_id }}"
+            echo "- Event: ${{ github.event_name }}"
+            echo "- Attempted schedule: hour exact / retry +5"
+            echo "- should_run: ${{ steps.hourly_gate.outputs.should_run }}"
+            echo "- target_hour: ${{ steps.hourly_gate.outputs.target_hour }}"
+            echo "- reason: ${{ steps.hourly_gate.outputs.reason }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Omitir ejecución duplicada
+        if: steps.hourly_gate.outputs.should_run != 'true'
+        run: |
+          echo "Se omite generación de reporte."
+          echo "Motivo: ${{ steps.hourly_gate.outputs.reason }}"
+
       - name: Instalar dependencias
+        if: steps.hourly_gate.outputs.should_run == 'true'
         run: pip install -r requirements.txt
 
       - name: Mostrar configuración activa
+        if: steps.hourly_gate.outputs.should_run == 'true'
         run: |
           echo "DATA_SOURCE=$DATA_SOURCE"
           echo "CLIENT_NUMBER=$CLIENT_NUMBER"
@@ -95,9 +140,15 @@ jobs:
           echo "DAILY_BUDGET_USD=$DAILY_BUDGET_USD"
 
       - name: Ejecutar HMA demo
+        id: hma_run
+        if: steps.hourly_gate.outputs.should_run == 'true'
+        continue-on-error: true
         run: python scripts/hma_demo.py
 
       - name: Verificar archivos generados
+        id: verify_outputs
+        if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success'
+        continue-on-error: true
         run: |
           pwd
           ls -la
@@ -109,11 +160,54 @@ jobs:
           test -f exports/latest_summary.json
           test -f exports/connection_status.json
 
+      - name: Reporte de falla de generación
+        if: always() && steps.hourly_gate.outputs.should_run == 'true' && (steps.hma_run.outcome != 'success' || steps.verify_outputs.outcome != 'success')
+        run: |
+          mkdir -p diagnostics
+          {
+            echo "# HMA Generation Failure Report"
+            echo ""
+            echo "- Workflow run id: ${{ github.run_id }}"
+            echo "- Event: ${{ github.event_name }}"
+            echo "- Target hour: ${{ steps.hourly_gate.outputs.target_hour }}"
+            echo "- Gate reason: ${{ steps.hourly_gate.outputs.reason }}"
+            echo "- hma_demo outcome: ${{ steps.hma_run.outcome }}"
+            echo "- verify outputs outcome: ${{ steps.verify_outputs.outcome }}"
+            echo ""
+            echo "## Meaning"
+            echo "GitHub did start the scheduled workflow, but the HMA report artifact was not produced successfully."
+            echo ""
+            echo "## Next retry"
+            echo "If this was the exact-hour attempt, the retry scheduled at minute 05 should attempt the same target hour again if no valid artifact exists."
+          } | tee diagnostics/hma_generation_failure_report.md
+
+          {
+            echo ""
+            echo "## HMA Generation Failure"
+            echo ""
+            cat diagnostics/hma_generation_failure_report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Subir diagnóstico de falla
+        if: always() && steps.hourly_gate.outputs.should_run == 'true' && (steps.hma_run.outcome != 'success' || steps.verify_outputs.outcome != 'success')
+        uses: actions/upload-artifact@v4
+        with:
+          name: HMA_FAILURE_${{ github.run_id }}
+          path: diagnostics/hma_generation_failure_report.md
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fallar run si no se generó artifact válido
+        if: steps.hourly_gate.outputs.should_run == 'true' && (steps.hma_run.outcome != 'success' || steps.verify_outputs.outcome != 'success')
+        run: exit 1
+
       - name: Definir nombre del artifact
+        if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success' && steps.verify_outputs.outcome == 'success'
         run: |
           echo "REPORT_ARTIFACT_NAME=$(cat reports/report_basename.txt)" >> "$GITHUB_ENV"
 
       - name: Guardar reportes y exports como artifact
+        if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success' && steps.verify_outputs.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.REPORT_ARTIFACT_NAME }}
@@ -123,3 +217,15 @@ jobs:
             exports/*.json
           if-no-files-found: error
           retention-days: 7
+
+      - name: Reporte de éxito
+        if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success' && steps.verify_outputs.outcome == 'success'
+        run: |
+          {
+            echo ""
+            echo "## HMA Report Generated"
+            echo ""
+            echo "- Target hour: ${{ steps.hourly_gate.outputs.target_hour }}"
+            echo "- Artifact: $REPORT_ARTIFACT_NAME"
+            echo "- Result: valid hourly report artifact created."
+          } >> "$GITHUB_STEP_SUMMARY"
