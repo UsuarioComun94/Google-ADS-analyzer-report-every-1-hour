@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
 import math
+import re
+import datetime as dt
 from typing import Any
 
 import pandas as pd
@@ -17,14 +19,11 @@ MASTER_FILE = HISTORY_DIR / "HMA_Master.xlsx"
 HISTORY_DIR.mkdir(exist_ok=True)
 
 # Criterio comercial base para presupuestos diarios altos.
-# Ajustable más adelante por cliente.
 CHANGE_NOISE_PCT = 2.0
 CHANGE_MODERATE_PCT = 5.0
 CHANGE_CRITICAL_PCT = 10.0
 
-DAILY_BUDGET_USD = 30000.0
-HOURLY_BUDGET_USD = DAILY_BUDGET_USD / 24
-
+DEFAULT_DAILY_BUDGET_USD = 30000.0
 MAX_SCALE_UP_PCT = 10.0
 MAX_SCALE_DOWN_PCT = 10.0
 
@@ -135,15 +134,35 @@ def metric_business_interpretation(metric: str, change_pct: float) -> str:
     return "Cambio registrado."
 
 
+def load_json_safely(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def extract_run_id_from_path(path: Path) -> str:
+    """
+    Extrae el GitHub Run ID desde carpetas tipo:
+    21-30_run-25705041490
+    Si no existe, devuelve vacío.
+    """
+    match = re.search(r"run-(\d+)", str(path))
+    return match.group(1) if match else ""
+
+
 def find_artifact_runs() -> list[dict]:
     """
-    Busca artifacts descargados en downloads/ y detecta pares:
-    latest_summary.json + latest_metrics.csv + connection_status.json.
+    Busca artifacts descargados en downloads/ y deduplica para que:
+    1 GitHub Run ID = 1 registro horario válido.
+
+    Si no existe Run ID en carpetas viejas, deduplica por:
+    client_number + latest_timestamp.
     """
-    runs = []
+    raw_runs = []
 
     if not DOWNLOADS_DIR.exists():
-        return runs
+        return raw_runs
 
     summary_files = list(DOWNLOADS_DIR.rglob("latest_summary.json"))
 
@@ -174,9 +193,21 @@ def find_artifact_runs() -> list[dict]:
                 named_report = str(named_reports[0])
 
         run_key = str(artifact_root.relative_to(DOWNLOADS_DIR))
+        run_id = extract_run_id_from_path(artifact_root)
+        summary = load_json_safely(summary_path)
 
-        runs.append(
+        client_number = summary.get("client_number", "")
+        latest_timestamp = summary.get("latest_timestamp", "")
+
+        if run_id:
+            dedupe_key = f"run_id::{run_id}"
+        else:
+            dedupe_key = f"timestamp::{client_number}::{latest_timestamp}"
+
+        raw_runs.append(
             {
+                "dedupe_key": dedupe_key,
+                "run_id": run_id,
                 "run_key": run_key,
                 "artifact_root": artifact_root,
                 "summary_path": summary_path,
@@ -184,10 +215,19 @@ def find_artifact_runs() -> list[dict]:
                 "connection_path": connection_path if connection_path.exists() else None,
                 "latest_report": latest_report,
                 "named_report": named_report,
+                "client_number": client_number,
+                "latest_timestamp": latest_timestamp,
             }
         )
 
-    return runs
+    # Deduplicación fuerte: si el mismo run aparece más de una vez, queda uno solo.
+    # Se conserva la primera carpeta ordenada por ruta para mantener comportamiento estable.
+    unique = {}
+    for run in sorted(raw_runs, key=lambda item: str(item["artifact_root"])):
+        if run["dedupe_key"] not in unique:
+            unique[run["dedupe_key"]] = run
+
+    return list(unique.values())
 
 
 def load_summary(path: Path) -> dict:
@@ -204,9 +244,21 @@ def build_hourly_summary(runs: list[dict]) -> pd.DataFrame:
         changes = summary.get("changes", {})
         alerts = summary.get("alerts", [])
         connection_status = summary.get("connection_status", {})
+        business_context = summary.get("business_context", {})
+
+        daily_budget_usd = safe_float(
+            business_context.get("daily_budget_usd"),
+            DEFAULT_DAILY_BUDGET_USD,
+        )
+        hourly_budget_usd = safe_float(
+            business_context.get("hourly_budget_usd"),
+            daily_budget_usd / 24,
+        )
 
         rows.append(
             {
+                "dedupe_key": run["dedupe_key"],
+                "run_id": run["run_id"],
                 "run_key": run["run_key"],
                 "client_number": summary.get("client_number", ""),
                 "timestamp": summary.get("latest_timestamp", ""),
@@ -214,6 +266,8 @@ def build_hourly_summary(runs: list[dict]) -> pd.DataFrame:
                 "data_source": summary.get("source", ""),
                 "requested_data_source": summary.get("requested_data_source", ""),
                 "health_status": summary.get("health_status", ""),
+                "daily_budget_usd": daily_budget_usd,
+                "hourly_budget_usd": hourly_budget_usd,
                 "spend": safe_float(latest.get("spend")),
                 "impressions": safe_int(latest.get("impressions")),
                 "clicks": safe_int(latest.get("clicks")),
@@ -244,9 +298,13 @@ def build_hourly_summary(runs: list[dict]) -> pd.DataFrame:
         return df
 
     df["timestamp_dt"] = pd.to_datetime(df["timestamp"], errors="coerce")
-    df = df.sort_values("timestamp_dt").drop_duplicates(subset=["run_key"], keep="last")
+    df = (
+        df.sort_values(["timestamp_dt", "run_id", "run_key"])
+        .drop_duplicates(subset=["dedupe_key"], keep="last")
+        .drop_duplicates(subset=["client_number", "timestamp"], keep="last")
+    )
 
-    return df
+    return df.sort_values("timestamp_dt")
 
 
 def build_campaign_metrics(runs: list[dict]) -> pd.DataFrame:
@@ -259,6 +317,8 @@ def build_campaign_metrics(runs: list[dict]) -> pd.DataFrame:
             client_number = summary.get("client_number", "")
 
             df = pd.read_csv(run["metrics_path"])
+            df["dedupe_key"] = run["dedupe_key"]
+            df["run_id"] = run["run_id"]
             df["run_key"] = run["run_key"]
             df["client_number"] = client_number
             df["summary_timestamp"] = latest_timestamp
@@ -275,6 +335,19 @@ def build_campaign_metrics(runs: list[dict]) -> pd.DataFrame:
         df_all["summary_timestamp"],
         errors="coerce",
     )
+
+    # Evita duplicar campañas si el mismo artifact fue descargado varias veces.
+    dedupe_cols = [
+        "dedupe_key",
+        "platform",
+        "account_name",
+        "campaign_name",
+        "creative_group",
+    ]
+    existing_cols = [col for col in dedupe_cols if col in df_all.columns]
+
+    if existing_cols:
+        df_all = df_all.drop_duplicates(subset=existing_cols, keep="last")
 
     return df_all.sort_values(["summary_timestamp_dt", "platform", "campaign_name"])
 
@@ -313,6 +386,9 @@ def build_metric_comparison(hourly_df: pd.DataFrame) -> pd.DataFrame:
                 {
                     "timestamp": current["timestamp"],
                     "client_number": current["client_number"],
+                    "run_id": current.get("run_id", ""),
+                    "compared_against_timestamp": previous["timestamp"],
+                    "compared_against_run_id": previous.get("run_id", ""),
                     "metric": metric,
                     "current_value": current_value,
                     "previous_value": previous_value,
@@ -383,6 +459,15 @@ def build_recommendations(hourly_df: pd.DataFrame, comparison_df: pd.DataFrame) 
     roas_threshold = safe_float(latest.get("roas_threshold"), 1.5)
     ctr_threshold = safe_float(latest.get("ctr_threshold"), 1.0)
 
+    daily_budget_usd = safe_float(
+        latest.get("daily_budget_usd"),
+        DEFAULT_DAILY_BUDGET_USD,
+    )
+    hourly_budget_usd = safe_float(
+        latest.get("hourly_budget_usd"),
+        daily_budget_usd / 24,
+    )
+
     rows = []
 
     def add(
@@ -397,14 +482,15 @@ def build_recommendations(hourly_df: pd.DataFrame, comparison_df: pd.DataFrame) 
             {
                 "timestamp": latest.get("timestamp", ""),
                 "client_number": latest.get("client_number", ""),
+                "run_id": latest.get("run_id", ""),
                 "level": level,
                 "area": area,
                 "recommended_action": action,
                 "motive": motive,
                 "confidence": confidence,
                 "requires_human_review": human_review,
-                "daily_budget_usd_reference": DAILY_BUDGET_USD,
-                "hourly_budget_usd_reference": HOURLY_BUDGET_USD,
+                "daily_budget_usd_reference": daily_budget_usd,
+                "hourly_budget_usd_reference": hourly_budget_usd,
             }
         )
 
@@ -566,6 +652,7 @@ def build_creative_assets(campaign_df: pd.DataFrame) -> pd.DataFrame:
 
     wanted_cols = [
         "summary_timestamp",
+        "run_id",
         "client_number",
         "platform",
         "account_name",
@@ -629,8 +716,9 @@ def autosize_and_style(path: Path):
 
     if "metric_comparison" in wb.sheetnames:
         ws = wb["metric_comparison"]
+        # Columna I = change_pct en la versión actual.
         ws.conditional_formatting.add(
-            "F2:F10000",
+            "I2:I10000",
             CellIsRule(
                 operator="greaterThan",
                 formula=["10"],
@@ -638,7 +726,7 @@ def autosize_and_style(path: Path):
             ),
         )
         ws.conditional_formatting.add(
-            "F2:F10000",
+            "I2:I10000",
             CellIsRule(
                 operator="lessThan",
                 formula=["-10"],
@@ -647,6 +735,46 @@ def autosize_and_style(path: Path):
         )
 
     wb.save(path)
+
+
+def write_master_workbook(
+    output_path: Path,
+    hourly_df: pd.DataFrame,
+    campaign_df: pd.DataFrame,
+    comparison_df: pd.DataFrame,
+    recommendations_df: pd.DataFrame,
+    creative_df: pd.DataFrame,
+):
+    """Escribe el Excel maestro en una ruta dada."""
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        hourly_df.to_excel(writer, sheet_name="hourly_summary", index=False)
+        campaign_df.to_excel(writer, sheet_name="campaign_metrics", index=False)
+        comparison_df.to_excel(writer, sheet_name="metric_comparison", index=False)
+        recommendations_df.to_excel(writer, sheet_name="recommendations", index=False)
+        creative_df.to_excel(writer, sheet_name="creative_assets", index=False)
+
+    autosize_and_style(output_path)
+
+
+def finalize_master_file(temp_path: Path) -> tuple[Path, bool]:
+    """
+    Intenta reemplazar HMA_Master.xlsx con el archivo temporal.
+
+    Si HMA_Master.xlsx está abierto en Excel, Windows suele bloquearlo.
+    En ese caso no se rompe el flujo: se guarda una copia PENDING con timestamp.
+
+    Devuelve:
+    - ruta final escrita
+    - True si tuvo que crear archivo PENDING
+    """
+    try:
+        temp_path.replace(MASTER_FILE)
+        return MASTER_FILE, False
+    except PermissionError:
+        timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        pending_path = HISTORY_DIR / f"HMA_Master_PENDING_{timestamp}.xlsx"
+        temp_path.replace(pending_path)
+        return pending_path, True
 
 
 def main():
@@ -658,17 +786,37 @@ def main():
     recommendations_df = build_recommendations(hourly_df, comparison_df)
     creative_df = build_creative_assets(campaign_df)
 
-    with pd.ExcelWriter(MASTER_FILE, engine="openpyxl") as writer:
-        hourly_df.to_excel(writer, sheet_name="hourly_summary", index=False)
-        campaign_df.to_excel(writer, sheet_name="campaign_metrics", index=False)
-        comparison_df.to_excel(writer, sheet_name="metric_comparison", index=False)
-        recommendations_df.to_excel(writer, sheet_name="recommendations", index=False)
-        creative_df.to_excel(writer, sheet_name="creative_assets", index=False)
+    temp_path = HISTORY_DIR / "HMA_Master__tmp.xlsx"
 
-    autosize_and_style(MASTER_FILE)
+    if temp_path.exists():
+        try:
+            temp_path.unlink()
+        except PermissionError:
+            timestamp = dt.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            temp_path = HISTORY_DIR / f"HMA_Master__tmp_{timestamp}.xlsx"
 
-    print(f"HMA Master actualizado correctamente: {MASTER_FILE}")
-    print(f"Runs procesados: {len(runs)}")
+    write_master_workbook(
+        output_path=temp_path,
+        hourly_df=hourly_df,
+        campaign_df=campaign_df,
+        comparison_df=comparison_df,
+        recommendations_df=recommendations_df,
+        creative_df=creative_df,
+    )
+
+    final_path, used_pending = finalize_master_file(temp_path)
+
+    unique_runs = len(hourly_df) if not hourly_df.empty else 0
+
+    if used_pending:
+        print("HMA_Master.xlsx estaba abierto o bloqueado.")
+        print(f"Se guardó una copia alternativa: {final_path}")
+        print("Cerrá HMA_Master.xlsx y luego podés reemplazarlo manualmente por esta copia si corresponde.")
+    else:
+        print(f"HMA Master actualizado correctamente: {final_path}")
+
+    print(f"Artifacts únicos procesados: {len(runs)}")
+    print(f"Registros horarios únicos en Excel: {unique_runs}")
     print(f"Filas hourly_summary: {len(hourly_df)}")
     print(f"Filas campaign_metrics: {len(campaign_df)}")
     print(f"Filas metric_comparison: {len(comparison_df)}")
