@@ -5,3 +5,5 @@ __pycache__/
 logs/
 reports/
 exports/
+downloads/
+historico/
