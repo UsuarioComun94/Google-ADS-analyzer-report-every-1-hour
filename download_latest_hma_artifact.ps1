@@ -90,6 +90,40 @@ function Get-ArtifactCount {
     }
 }
 
+
+function Set-GeneratedTimestamp {
+    param(
+        [string]$TargetPath,
+        [datetime]$GeneratedAt
+    )
+
+    try {
+        if (-not (Test-Path -LiteralPath $TargetPath)) {
+            return
+        }
+
+        # Primero ajustar archivos y subcarpetas internas.
+        # Después ajustar la carpeta principal para que Windows Explorer muestre
+        # la hora de generación del run, no la hora local de descarga.
+        Get-ChildItem -LiteralPath $TargetPath -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $_.CreationTime = $GeneratedAt
+                $_.LastWriteTime = $GeneratedAt
+                $_.LastAccessTime = $GeneratedAt
+            } catch {
+                # No bloquear el flujo por metadatos de archivo.
+            }
+        }
+
+        $targetItem = Get-Item -LiteralPath $TargetPath -Force
+        $targetItem.CreationTime = $GeneratedAt
+        $targetItem.LastWriteTime = $GeneratedAt
+        $targetItem.LastAccessTime = $GeneratedAt
+    } catch {
+        Write-Host "No se pudo ajustar la fecha de modificación de: $TargetPath"
+    }
+}
+
 function Trigger-Workflow-And-Wait {
     Write-Host "No hay run exitoso/en curso para la hora actual."
     Write-Host "Disparando GitHub Actions manualmente para generar reporte horario..."
@@ -212,8 +246,12 @@ foreach ($Run in $Runs) {
         Select-Object -First 1
 
     if ($ExistingRunFolder) {
+        $RunCreatedAtLocal = ([datetime]::Parse($Run.createdAt)).ToLocalTime()
+        Set-GeneratedTimestamp -TargetPath $ExistingRunFolder.FullName -GeneratedAt $RunCreatedAtLocal
+
         Write-Host "Ya existe run $RunId. No se duplica:"
         Write-Host $ExistingRunFolder.FullName
+        Write-Host "Fecha de carpeta ajustada a hora de generación: $RunCreatedAtLocal"
         $SkippedCount += 1
         continue
     }
@@ -251,7 +289,10 @@ foreach ($Run in $Runs) {
       --dir $DownloadDir
 
     if ($LASTEXITCODE -eq 0) {
+        Set-GeneratedTimestamp -TargetPath $DownloadDir -GeneratedAt $RunCreatedAtLocal
+
         Write-Host "Run $RunId descargado correctamente."
+        Write-Host "Fecha de carpeta ajustada a hora de generación: $RunCreatedAtLocal"
         $DownloadedCount += 1
     } else {
         Write-Host "Falló la descarga del run $RunId."
