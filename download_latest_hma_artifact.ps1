@@ -72,6 +72,24 @@ function Has-CurrentHourRun {
     return $false
 }
 
+function Get-ArtifactCount {
+    param(
+        [string]$RunId
+    )
+
+    try {
+        $countText = gh api "repos/$Repo/actions/runs/$RunId/artifacts" --jq ".total_count" 2>$null
+
+        if (-not $countText) {
+            return 0
+        }
+
+        return [int]$countText
+    } catch {
+        return 0
+    }
+}
+
 function Trigger-Workflow-And-Wait {
     Write-Host "No hay run exitoso/en curso para la hora actual."
     Write-Host "Disparando GitHub Actions manualmente para generar reporte horario..."
@@ -178,6 +196,7 @@ $Runs = $Runs | Sort-Object { [datetime]$_.createdAt }
 
 $DownloadedCount = 0
 $SkippedCount = 0
+$NoArtifactCount = 0
 $FailedCount = 0
 
 foreach ($Run in $Runs) {
@@ -199,6 +218,16 @@ foreach ($Run in $Runs) {
         continue
     }
 
+    $ArtifactCount = Get-ArtifactCount -RunId $RunId
+
+    if ($ArtifactCount -le 0) {
+        Write-Host "Run $RunId no tiene artifacts descargables. Se omite, no es error crítico."
+        Write-Host "Evento: $($Run.event)"
+        Write-Host "Creado: $($Run.createdAt)"
+        $NoArtifactCount += 1
+        continue
+    }
+
     $RunCreatedAtLocal = ([datetime]::Parse($Run.createdAt)).ToLocalTime()
     $RunDay = $RunCreatedAtLocal.ToString("yyyy-MM-dd")
     $RunTime = $RunCreatedAtLocal.ToString("HH-mm")
@@ -214,6 +243,7 @@ foreach ($Run in $Runs) {
     Write-Host "Descargando run pendiente $RunId..."
     Write-Host "Evento: $($Run.event)"
     Write-Host "Creado: $($Run.createdAt)"
+    Write-Host "Artifacts disponibles: $ArtifactCount"
     Write-Host "Destino: $DownloadDir"
 
     gh run download $RunId `
@@ -241,7 +271,8 @@ Write-Host "Resumen de recuperación:"
 Write-Host "Runs revisados: $($Runs.Count)"
 Write-Host "Runs nuevos descargados: $DownloadedCount"
 Write-Host "Runs ya existentes omitidos: $SkippedCount"
-Write-Host "Runs con error: $FailedCount"
+Write-Host "Runs sin artifact omitidos: $NoArtifactCount"
+Write-Host "Runs con error real: $FailedCount"
 
 # El Excel se reconstruye desde reportes horarios únicos.
 # No genera reportes nuevos. Solo consolida lo que ya existe en downloads/.
