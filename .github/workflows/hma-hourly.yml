@@ -1,10 +1,13 @@
 name: HMA Hourly Demo
 
+run-name: HMA ${{ github.event_name }} run-${{ github.run_number }}
+
 on:
-  # Intento principal a la hora exacta y retry a los 5 minutos.
-  # GitHub puede demorar el arranque real, pero el target lógico es la hora exacta.
+  # Fallback secundario.
+  # El reloj principal exacto :00 / retry :05 debe venir desde cron-job.org usando workflow_dispatch.
+  # GitHub schedule puede demorarse o perder ejecuciones, especialmente al inicio de cada hora.
   schedule:
-    - cron: "0,5 * * * *"
+    - cron: "17 * * * *"
 
   workflow_dispatch:
     inputs:
@@ -63,10 +66,10 @@ on:
 
 permissions:
   contents: read
-  actions: write
+  actions: read
 
 concurrency:
-  group: hma-hourly-${{ github.ref }}-${{ github.run_id }}
+  group: hma-hourly-demo-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -100,6 +103,8 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_WORKFLOW_FILE: hma-hourly.yml
           GITHUB_REF_NAME: ${{ github.ref_name }}
+          CLIENT_NUMBER: ${{ env.CLIENT_NUMBER }}
+          REPORT_SUFFIX: ${{ env.REPORT_SUFFIX }}
           REPORT_TIMEZONE: ${{ env.REPORT_TIMEZONE }}
         run: python scripts/hma_github_hourly_gate.py
 
@@ -111,9 +116,10 @@ jobs:
             echo ""
             echo "- Workflow run id: ${{ github.run_id }}"
             echo "- Event: ${{ github.event_name }}"
-            echo "- Attempted schedule: hour exact / retry +5"
             echo "- should_run: ${{ steps.hourly_gate.outputs.should_run }}"
             echo "- target_hour: ${{ steps.hourly_gate.outputs.target_hour }}"
+            echo "- target_hour_slug: ${{ steps.hourly_gate.outputs.target_hour_slug }}"
+            echo "- artifact_name: ${{ steps.hourly_gate.outputs.artifact_name }}"
             echo "- reason: ${{ steps.hourly_gate.outputs.reason }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -138,11 +144,16 @@ jobs:
           echo "ROAS_THRESHOLD=$ROAS_THRESHOLD"
           echo "CTR_THRESHOLD=$CTR_THRESHOLD"
           echo "DAILY_BUDGET_USD=$DAILY_BUDGET_USD"
+          echo "HMA_TARGET_HOUR=${{ steps.hourly_gate.outputs.target_hour }}"
+          echo "HMA_TARGET_HOUR_SLUG=${{ steps.hourly_gate.outputs.target_hour_slug }}"
 
       - name: Ejecutar HMA demo
         id: hma_run
         if: steps.hourly_gate.outputs.should_run == 'true'
         continue-on-error: true
+        env:
+          HMA_TARGET_HOUR: ${{ steps.hourly_gate.outputs.target_hour }}
+          HMA_TARGET_HOUR_SLUG: ${{ steps.hourly_gate.outputs.target_hour_slug }}
         run: python scripts/hma_demo.py
 
       - name: Verificar archivos generados
@@ -175,10 +186,10 @@ jobs:
             echo "- verify outputs outcome: ${{ steps.verify_outputs.outcome }}"
             echo ""
             echo "## Meaning"
-            echo "GitHub did start the scheduled workflow, but the HMA report artifact was not produced successfully."
+            echo "GitHub started the workflow, but the HMA report artifact was not produced successfully."
             echo ""
-            echo "## Next retry"
-            echo "If this was the exact-hour attempt, the retry scheduled at minute 05 should attempt the same target hour again if no valid artifact exists."
+            echo "## Operational consequence"
+            echo "No valid hourly artifact was produced for this target hour."
           } | tee diagnostics/hma_generation_failure_report.md
 
           {
@@ -201,10 +212,10 @@ jobs:
         if: steps.hourly_gate.outputs.should_run == 'true' && (steps.hma_run.outcome != 'success' || steps.verify_outputs.outcome != 'success')
         run: exit 1
 
-      - name: Definir nombre del artifact
+      - name: Definir nombre determinístico del artifact
         if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success' && steps.verify_outputs.outcome == 'success'
         run: |
-          echo "REPORT_ARTIFACT_NAME=$(cat reports/report_basename.txt)" >> "$GITHUB_ENV"
+          echo "REPORT_ARTIFACT_NAME=${{ steps.hourly_gate.outputs.artifact_name }}" >> "$GITHUB_ENV"
 
       - name: Guardar reportes y exports como artifact
         if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success' && steps.verify_outputs.outcome == 'success'
