@@ -14,13 +14,13 @@ ERROR_DIR = BASE_DIR / "error"
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 HISTORY_DIR = BASE_DIR / "historico"
 MASTER_FILE = HISTORY_DIR / "HMA_Master.xlsx"
+STATE_FILE = ERROR_DIR / ".hma_error_state.json"
 
 REPO = "UsuarioComun94/Google-ADS-analyzer-report-every-1-hour"
 CLIENT_NUMBER = "CLIENTE-DEMO-0001"
 REPORT_SUFFIX = "JPPQ"
 
-# El reporte deberia estar disponible como maximo cerca del minuto 05.
-# Desde minuto 06 en adelante, si falta algo, se registra error.
+# Desde minuto 06 en adelante, si falta algo, se considera error operativo.
 GRACE_MINUTE = 6
 
 
@@ -50,18 +50,66 @@ def ensure_error_dir() -> Path:
     return ERROR_DIR
 
 
-def write_error_file(error_type: str, ctx: dict[str, str], details: dict[str, Any]) -> Path:
-    """
-    Crea 1 TXT por cada deteccion de error.
+def load_state() -> dict[str, Any]:
+    ensure_error_dir()
 
-    El nombre del archivo contiene solamente fecha y hora del chequeo:
-    YYYY-MM-DD_HH-mm-ss.txt
+    if not STATE_FILE.exists():
+        return {"emitted_errors": []}
 
-    Si por alguna razon hay colision en el mismo segundo, agrega _01, _02, etc.
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"emitted_errors": []}
+
+
+def save_state(state: dict[str, Any]) -> None:
+    ensure_error_dir()
+    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def already_emitted(error_key: str) -> bool:
+    state = load_state()
+    emitted = state.get("emitted_errors", [])
+    return error_key in emitted
+
+
+def mark_emitted(error_key: str) -> None:
+    state = load_state()
+    emitted = state.get("emitted_errors", [])
+
+    if error_key not in emitted:
+        emitted.append(error_key)
+
+    # Evita que el state crezca infinito.
+    state["emitted_errors"] = emitted[-500:]
+    state["updated_at"] = now_local().strftime("%Y-%m-%d %H:%M:%S")
+
+    save_state(state)
+
+
+def write_error_file_once(error_type: str, ctx: dict[str, str], details: dict[str, Any]) -> Path | None:
     """
+    Crea 1 TXT por cada error lógico detectado.
+
+    No crea un TXT cada minuto.
+    Deduplica por:
+    - hora esperada del reporte
+    - tipo de error
+
+    Ejemplo:
+    2026-05-12 23:00 + GITHUB_ARTIFACT_NOT_GENERATED => 1 solo TXT.
+    """
+    error_key = f"{ctx['hour_label']}|{error_type}"
+
+    if already_emitted(error_key):
+        print(f"Error ya registrado previamente. No se crea otro TXT. key={error_key}")
+        return None
+
     error_dir = ensure_error_dir()
     checked_at_dt = now_local()
     checked_at = checked_at_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Nombre pedido: solamente fecha y hora del chequeo.
     base_name = checked_at_dt.strftime("%Y-%m-%d_%H-%M-%S")
     path = error_dir / f"{base_name}.txt"
 
@@ -88,7 +136,16 @@ def write_error_file(error_type: str, ctx: dict[str, str], details: dict[str, An
         "Artifact esperado:",
         ctx["artifact_name"],
         "",
-        "Detalle:",
+        "Explicacion:",
+        str(details.get("meaning", "")),
+        "",
+        "Impacto operativo:",
+        str(details.get("operational_impact", "")),
+        "",
+        "Causa probable:",
+        str(details.get("probable_cause", "")),
+        "",
+        "Detalle tecnico:",
         json.dumps(payload, ensure_ascii=False, indent=2),
         "",
     ]
@@ -98,6 +155,8 @@ def write_error_file(error_type: str, ctx: dict[str, str], details: dict[str, An
     index_path = ERROR_DIR / "hma_error_index.log"
     with index_path.open("a", encoding="utf-8") as f:
         f.write(f"[{checked_at}] {error_type} | expected_hour={ctx['hour_label']} | file={path.name}\n")
+
+    mark_emitted(error_key)
 
     return path
 
@@ -179,11 +238,20 @@ def excel_has_hour(ctx: dict[str, str]) -> bool:
         if value_text.startswith(expected):
             return True
 
-        # Tolerancia si Excel muestra sin segundos.
         if value_text.startswith(expected[:-3]):
             return True
 
     return False
+
+
+def emit_or_skip(error_type: str, ctx: dict[str, str], details: dict[str, Any], exit_code: int) -> int:
+    path = write_error_file_once(error_type, ctx, details)
+
+    if path is None:
+        return 0
+
+    print(f"ERROR registrado: {path}")
+    return exit_code
 
 
 def main() -> int:
@@ -201,7 +269,7 @@ def main() -> int:
     try:
         artifact = find_expected_artifact(ctx)
     except Exception as exc:
-        path = write_error_file(
+        return emit_or_skip(
             "MONITOR_GITHUB_QUERY_FAILED",
             ctx,
             {
@@ -210,12 +278,11 @@ def main() -> int:
                 "operational_impact": "No se puede confirmar si el reporte fue generado.",
                 "exception": str(exc),
             },
+            1,
         )
-        print(f"ERROR registrado: {path}")
-        return 1
 
     if artifact is None:
-        path = write_error_file(
+        return emit_or_skip(
             "GITHUB_ARTIFACT_NOT_GENERATED",
             ctx,
             {
@@ -224,15 +291,14 @@ def main() -> int:
                 "probable_cause": "GitHub Actions no ejecuto a tiempo, el workflow fallo, el gate bloqueo, o el artifact no se subio.",
                 "operational_impact": "El reporte no esta disponible para lectura operativa de la hora actual.",
             },
+            2,
         )
-        print(f"ERROR registrado: {path}")
-        return 2
 
     workflow_run = artifact.get("workflow_run") or {}
     run_id = str(workflow_run.get("id", "")).strip()
 
     if not local_run_folder_exists(run_id):
-        path = write_error_file(
+        return emit_or_skip(
             "ARTIFACT_EXISTS_BUT_NOT_DOWNLOADED",
             ctx,
             {
@@ -243,12 +309,11 @@ def main() -> int:
                 "probable_cause": "La tarea local de descarga no corrio, fallo gh run download, hubo problema de red, o la PC estaba apagada/suspendida.",
                 "operational_impact": "El reporte existe en GitHub, pero todavia no esta disponible localmente.",
             },
+            3,
         )
-        print(f"ERROR registrado: {path}")
-        return 3
 
     if not excel_has_hour(ctx):
-        path = write_error_file(
+        return emit_or_skip(
             "DOWNLOADED_BUT_EXCEL_NOT_UPDATED",
             ctx,
             {
@@ -258,9 +323,8 @@ def main() -> int:
                 "probable_cause": "Excel estaba abierto, update_hma_master.py fallo, hubo PENDING no promovido, o el archivo descargado no tenia estructura valida.",
                 "operational_impact": "El reporte fue generado/descargado, pero el historico operativo no quedo actualizado.",
             },
+            4,
         )
-        print(f"ERROR registrado: {path}")
-        return 4
 
     print(f"Monitor HMA OK: artifact, descarga local y Excel presentes para {ctx['hour_label']}.")
     return 0
