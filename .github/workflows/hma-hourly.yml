@@ -1,4 +1,4 @@
-name: HMA Hourly Demo
+﻿name: HMA Hourly Demo
 
 run-name: HMA ${{ github.event_name }} run-${{ github.run_number }}
 
@@ -7,12 +7,12 @@ on:
   # El reloj principal exacto :00 / retry :05 debe venir desde cron-job.org usando workflow_dispatch.
   # GitHub schedule puede demorarse o perder ejecuciones, especialmente al inicio de cada hora.
   schedule:
-    - cron: "17 * * * *"
+    - cron: "0,5,17 * * * *"
 
   workflow_dispatch:
     inputs:
       client_number:
-        description: "Cliente o número de cliente"
+        description: "Cliente o nÃºmero de cliente"
         required: false
         default: "CLIENTE-DEMO-0001"
         type: string
@@ -108,7 +108,7 @@ jobs:
           REPORT_TIMEZONE: ${{ env.REPORT_TIMEZONE }}
         run: python scripts/hma_github_hourly_gate.py
 
-      - name: Reporte de decisión del gate
+      - name: Reporte de decisiÃ³n del gate
         if: always()
         run: |
           {
@@ -123,17 +123,17 @@ jobs:
             echo "- reason: ${{ steps.hourly_gate.outputs.reason }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Omitir ejecución duplicada
+      - name: Omitir ejecuciÃ³n duplicada
         if: steps.hourly_gate.outputs.should_run != 'true'
         run: |
-          echo "Se omite generación de reporte."
+          echo "Se omite generaciÃ³n de reporte."
           echo "Motivo: ${{ steps.hourly_gate.outputs.reason }}"
 
       - name: Instalar dependencias
         if: steps.hourly_gate.outputs.should_run == 'true'
         run: pip install -r requirements.txt
 
-      - name: Mostrar configuración activa
+      - name: Mostrar configuraciÃ³n activa
         if: steps.hourly_gate.outputs.should_run == 'true'
         run: |
           echo "DATA_SOURCE=$DATA_SOURCE"
@@ -171,7 +171,7 @@ jobs:
           test -f exports/latest_summary.json
           test -f exports/connection_status.json
 
-      - name: Reporte de falla de generación
+      - name: Reporte de falla de generaciÃ³n
         if: always() && steps.hourly_gate.outputs.should_run == 'true' && (steps.hma_run.outcome != 'success' || steps.verify_outputs.outcome != 'success')
         run: |
           mkdir -p diagnostics
@@ -199,7 +199,7 @@ jobs:
             cat diagnostics/hma_generation_failure_report.md
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Subir diagnóstico de falla
+      - name: Subir diagnÃ³stico de falla
         if: always() && steps.hourly_gate.outputs.should_run == 'true' && (steps.hma_run.outcome != 'success' || steps.verify_outputs.outcome != 'success')
         uses: actions/upload-artifact@v4
         with:
@@ -208,11 +208,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Fallar run si no se generó artifact válido
+      - name: Fallar run si no se generÃ³ artifact vÃ¡lido
         if: steps.hourly_gate.outputs.should_run == 'true' && (steps.hma_run.outcome != 'success' || steps.verify_outputs.outcome != 'success')
         run: exit 1
 
-      - name: Definir nombre determinístico del artifact
+      - name: Definir nombre determinÃ­stico del artifact
         if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success' && steps.verify_outputs.outcome == 'success'
         run: |
           echo "REPORT_ARTIFACT_NAME=${{ steps.hourly_gate.outputs.artifact_name }}" >> "$GITHUB_ENV"
@@ -229,7 +229,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Reporte de éxito
+      - name: Reporte de Ã©xito
         if: steps.hourly_gate.outputs.should_run == 'true' && steps.hma_run.outcome == 'success' && steps.verify_outputs.outcome == 'success'
         run: |
           {
@@ -240,3 +240,4 @@ jobs:
             echo "- Artifact: $REPORT_ARTIFACT_NAME"
             echo "- Result: valid hourly report artifact created."
           } >> "$GITHUB_STEP_SUMMARY"
+
