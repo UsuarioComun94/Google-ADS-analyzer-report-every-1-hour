@@ -1,4 +1,4 @@
-$Repo = "UsuarioComun94/Google-ADS-analyzer-report-every-1-hour"
+﻿$Repo = "UsuarioComun94/Google-ADS-analyzer-report-every-1-hour"
 $WorkflowFile = "hma-hourly.yml"
 $WorkflowName = "HMA Hourly Demo"
 $BaseProjectDir = "D:\Proyectos\hma-system"
@@ -6,8 +6,8 @@ $BaseDownloadDir = Join-Path $BaseProjectDir "downloads"
 $PythonExe = Join-Path $BaseProjectDir ".venv\Scripts\python.exe"
 $UpdateMasterScript = Join-Path $BaseProjectDir "scripts\update_hma_master.py"
 
-# Inicio limpio del histórico local.
-# El downloader ignorará cualquier run generado antes de esta fecha/hora local.
+# Inicio limpio del histÃ³rico local.
+# El downloader ignorarÃ¡ cualquier run generado antes de esta fecha/hora local.
 $StartFromLocal = "2026-05-12T19:30:00"
 $StartFromDateTime = [datetime]::Parse($StartFromLocal)
 
@@ -16,7 +16,7 @@ $LookbackRuns = 50
 
 # IMPORTANTE:
 # La PC local NO dispara workflows.
-# La PC local solo descarga artifacts ya existentes y actualiza el histórico.
+# La PC local solo descarga artifacts ya existentes y actualiza el histÃ³rico.
 $TriggerWorkflowIfMissingCurrentHour = $false
 
 New-Item -ItemType Directory -Force -Path $BaseDownloadDir | Out-Null
@@ -70,7 +70,7 @@ function Set-GeneratedTimestamp {
         $targetItem.LastWriteTime = $GeneratedAt
         $targetItem.LastAccessTime = $GeneratedAt
     } catch {
-        Write-Host "No se pudo ajustar la fecha de modificación de: $TargetPath"
+        Write-Host "No se pudo ajustar la fecha de modificaciÃ³n de: $TargetPath"
     }
 }
 
@@ -116,10 +116,10 @@ function Has-DownloadedHour {
 }
 
 Write-Host "Inicio limpio configurado desde: $StartFromDateTime"
-Write-Host "Modo local: SOLO DESCARGA. La generación horaria corresponde a GitHub Actions o trigger externo."
+Write-Host "Modo local: SOLO DESCARGA. La generaciÃ³n horaria corresponde a GitHub Actions o trigger externo."
 
 if ((Get-Date) -lt $StartFromDateTime) {
-    Write-Host "Todavía no llegó la hora de inicio configurada."
+    Write-Host "TodavÃ­a no llegÃ³ la hora de inicio configurada."
     Write-Host "No se descargan runs anteriores."
     exit 0
 }
@@ -153,7 +153,7 @@ if (-not $Runs -or $Runs.Count -eq 0) {
     exit 0
 }
 
-# Procesar del más viejo al más nuevo para que el histórico quede natural.
+# Procesar del mÃ¡s viejo al mÃ¡s nuevo para que el histÃ³rico quede natural.
 $Runs = $Runs | Sort-Object { [datetime]$_.createdAt }
 
 $DownloadedCount = 0
@@ -183,7 +183,7 @@ foreach ($Run in $Runs) {
 
         Write-Host "Ya existe run $RunId. No se duplica:"
         Write-Host $ExistingRunFolder.FullName
-        Write-Host "Fecha de carpeta ajustada a hora de generación: $RunCreatedAtLocal"
+        Write-Host "Fecha de carpeta ajustada a hora de generaciÃ³n: $RunCreatedAtLocal"
 
         $SeenHourKeys[$RunHourKey] = $true
         $SkippedCount += 1
@@ -191,7 +191,7 @@ foreach ($Run in $Runs) {
     }
 
     if ($SeenHourKeys.ContainsKey($RunHourKey) -or (Has-DownloadedHour -HourKey $RunHourKey)) {
-        Write-Host "Ya existe un artifact local para la hora lógica $RunHourKey. Se omite run duplicado:"
+        Write-Host "Ya existe un artifact local para la hora lÃ³gica $RunHourKey. Se omite run duplicado:"
         Write-Host "Run: $RunId"
         Write-Host "Evento: $($Run.event)"
         Write-Host "Creado: $($Run.createdAt)"
@@ -202,7 +202,7 @@ foreach ($Run in $Runs) {
     $ArtifactCount = Get-ArtifactCount -RunId $RunId
 
     if ($ArtifactCount -le 0) {
-        Write-Host "Run $RunId no tiene artifacts descargables. Se omite, no es error crítico."
+        Write-Host "Run $RunId no tiene artifacts descargables. Se omite, no es error crÃ­tico."
         Write-Host "Evento: $($Run.event)"
         Write-Host "Creado: $($Run.createdAt)"
         $NoArtifactCount += 1
@@ -223,8 +223,8 @@ foreach ($Run in $Runs) {
     Write-Host "Descargando run pendiente $RunId..."
     Write-Host "Evento: $($Run.event)"
     Write-Host "Creado: $($Run.createdAt)"
-    Write-Host "Hora local de generación: $RunCreatedAtLocal"
-    Write-Host "Hora lógica local: $RunHourKey"
+    Write-Host "Hora local de generaciÃ³n: $RunCreatedAtLocal"
+    Write-Host "Hora lÃ³gica local: $RunHourKey"
     Write-Host "Artifacts disponibles: $ArtifactCount"
     Write-Host "Destino: $DownloadDir"
 
@@ -236,12 +236,12 @@ foreach ($Run in $Runs) {
         Set-GeneratedTimestamp -TargetPath $DownloadDir -GeneratedAt $RunCreatedAtLocal
 
         Write-Host "Run $RunId descargado correctamente."
-        Write-Host "Fecha de carpeta ajustada a hora de generación: $RunCreatedAtLocal"
+        Write-Host "Fecha de carpeta ajustada a hora de generaciÃ³n: $RunCreatedAtLocal"
 
         $SeenHourKeys[$RunHourKey] = $true
         $DownloadedCount += 1
     } else {
-        Write-Host "Falló la descarga del run $RunId."
+        Write-Host "FallÃ³ la descarga del run $RunId."
         $FailedCount += 1
 
         try {
@@ -254,7 +254,7 @@ foreach ($Run in $Runs) {
     }
 }
 
-Write-Host "Resumen de recuperación:"
+Write-Host "Resumen de recuperaciÃ³n:"
 Write-Host "Runs elegibles revisados: $($Runs.Count)"
 Write-Host "Runs nuevos descargados: $DownloadedCount"
 Write-Host "Runs ya existentes omitidos: $SkippedCount"
@@ -263,10 +263,11 @@ Write-Host "Runs sin artifact omitidos: $NoArtifactCount"
 Write-Host "Runs con error real: $FailedCount"
 
 if (Test-Path $PythonExe) {
-    Write-Host "Actualizando HMA_Master.xlsx con reportes horarios únicos..."
+    Write-Host "Actualizando HMA_Master.xlsx con reportes horarios Ãºnicos..."
     & $PythonExe $UpdateMasterScript
 } else {
-    Write-Host "No se encontró Python del entorno virtual:"
+    Write-Host "No se encontrÃ³ Python del entorno virtual:"
     Write-Host $PythonExe
     exit 1
 }
+
