@@ -5,6 +5,7 @@ $BaseProjectDir = "D:\Proyectos\hma-system"
 $BaseDownloadDir = Join-Path $BaseProjectDir "downloads"
 $PythonExe = Join-Path $BaseProjectDir ".venv\Scripts\python.exe"
 $UpdateMasterScript = Join-Path $BaseProjectDir "scripts\update_hma_master.py"
+$MetricLogicScript = Join-Path $BaseProjectDir "scripts\fix_metric_comparison_logic.py"
 
 # Inicio limpio del histÃ³rico local.
 # El downloader ignorarÃ¡ cualquier run generado antes de esta fecha/hora local.
@@ -264,10 +265,49 @@ Write-Host "Runs con error real: $FailedCount"
 
 if (Test-Path $PythonExe) {
     Write-Host "Actualizando HMA_Master.xlsx con reportes horarios Ãºnicos..."
-    & $PythonExe $UpdateMasterScript
+    $MasterFile = "D:\Proyectos\hma-system\historico\HMA_Master.xlsx"
+$StyleScript = "D:\Proyectos\hma-system\scripts\style_hma_tabs_and_bold.py"
+
+$MasterBefore = if (Test-Path $MasterFile) {
+    (Get-Item $MasterFile).LastWriteTimeUtc
+} else {
+    $null
+}
+& $PythonExe $UpdateMasterScript
+$UpdateExitCode = $LASTEXITCODE
+
+if ($UpdateExitCode -ne 0) {
+    Write-Host "update_hma_master.py terminó con error. No se aplica lógica ni estilo."
+    exit $UpdateExitCode
+}
+
+if (Test-Path $MetricLogicScript) {
+    Write-Host "Corrigiendo lógica de metric_comparison..."
+    & $PythonExe $MetricLogicScript
+    $MetricLogicExitCode = $LASTEXITCODE
+
+    if ($MetricLogicExitCode -ne 0) {
+        Write-Host "fix_metric_comparison_logic.py terminó con error."
+        exit $MetricLogicExitCode
+    }
+}
+
+if (Test-Path $StyleScript) {
+    Write-Host "Aplicando estilo visual a HMA_Master.xlsx..."
+    & $PythonExe $StyleScript
+    $StyleExitCode = $LASTEXITCODE
+
+    if ($StyleExitCode -ne 0) {
+        Write-Host "style_hma_tabs_and_bold.py terminó con error."
+        exit $StyleExitCode
+    }
+}
 } else {
     Write-Host "No se encontrÃ³ Python del entorno virtual:"
     Write-Host $PythonExe
     exit 1
 }
+
+
+
 
