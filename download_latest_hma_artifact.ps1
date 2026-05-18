@@ -1,4 +1,4 @@
-﻿$Repo = "UsuarioComun94/Google-ADS-analyzer-report-every-1-hour"
+$Repo = "UsuarioComun94/Google-ADS-analyzer-report-every-1-hour"
 $WorkflowFile = "hma-hourly.yml"
 $WorkflowName = "HMA Hourly Demo"
 $BaseProjectDir = "D:\Proyectos\hma-system"
@@ -264,46 +264,58 @@ Write-Host "Runs sin artifact omitidos: $NoArtifactCount"
 Write-Host "Runs con error real: $FailedCount"
 
 if (Test-Path $PythonExe) {
-    Write-Host "Actualizando HMA_Master.xlsx con reportes horarios Ãºnicos..."
+    Write-Host "Actualizando HMA_Master.xlsx con reportes horarios ?nicos..."
+
     $MasterFile = "D:\Proyectos\hma-system\historico\HMA_Master.xlsx"
-$StyleScript = "D:\Proyectos\hma-system\scripts\style_hma_tabs_and_bold.py"
+    $StyleScript = Join-Path $BaseProjectDir "scripts\style_hma_tabs_and_bold.py"
 
-$MasterBefore = if (Test-Path $MasterFile) {
-    (Get-Item $MasterFile).LastWriteTimeUtc
-} else {
-    $null
-}
-& $PythonExe $UpdateMasterScript
-$UpdateExitCode = $LASTEXITCODE
-
-if ($UpdateExitCode -ne 0) {
-    Write-Host "update_hma_master.py terminó con error. No se aplica lógica ni estilo."
-    exit $UpdateExitCode
-}
-
-if (Test-Path $MetricLogicScript) {
-    Write-Host "Corrigiendo lógica de metric_comparison..."
-    & $PythonExe $MetricLogicScript
-    $MetricLogicExitCode = $LASTEXITCODE
-
-    if ($MetricLogicExitCode -ne 0) {
-        Write-Host "fix_metric_comparison_logic.py terminó con error."
-        exit $MetricLogicExitCode
+    $MasterBefore = if (Test-Path $MasterFile) {
+        (Get-Item $MasterFile).LastWriteTimeUtc
+    } else {
+        $null
     }
-}
 
-if (Test-Path $StyleScript) {
-    Write-Host "Aplicando estilo visual a HMA_Master.xlsx..."
-    & $PythonExe $StyleScript
-    $StyleExitCode = $LASTEXITCODE
+    & $PythonExe $UpdateMasterScript
+    $UpdateExitCode = $LASTEXITCODE
 
-    if ($StyleExitCode -ne 0) {
-        Write-Host "style_hma_tabs_and_bold.py terminó con error."
-        exit $StyleExitCode
+    if ($UpdateExitCode -ne 0) {
+        Write-Host "update_hma_master.py termin? con error. No se aplica l?gica ni estilo."
+        exit $UpdateExitCode
     }
-}
+
+    $MasterAfter = if (Test-Path $MasterFile) {
+        (Get-Item $MasterFile).LastWriteTimeUtc
+    } else {
+        $null
+    }
+
+    if ($MasterBefore -eq $MasterAfter) {
+        Write-Host "Sin cambios en HMA_Master.xlsx; no se aplica l?gica ni estilo."
+    } else {
+        if (Test-Path $MetricLogicScript) {
+            Write-Host "Corrigiendo l?gica de metric_comparison..."
+            & $PythonExe $MetricLogicScript
+            $MetricLogicExitCode = $LASTEXITCODE
+
+            if ($MetricLogicExitCode -ne 0) {
+                Write-Host "fix_metric_comparison_logic.py termin? con error."
+                exit $MetricLogicExitCode
+            }
+        }
+
+        if (Test-Path $StyleScript) {
+            Write-Host "Aplicando estilo visual a HMA_Master.xlsx..."
+            & $PythonExe $StyleScript
+            $StyleExitCode = $LASTEXITCODE
+
+            if ($StyleExitCode -ne 0) {
+                Write-Host "style_hma_tabs_and_bold.py termin? con error."
+                exit $StyleExitCode
+            }
+        }
+    }
 } else {
-    Write-Host "No se encontrÃ³ Python del entorno virtual:"
+    Write-Host "No se encontr? Python del entorno virtual:"
     Write-Host $PythonExe
     exit 1
 }
