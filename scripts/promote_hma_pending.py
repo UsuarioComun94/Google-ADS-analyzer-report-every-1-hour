@@ -1,12 +1,23 @@
-﻿from pathlib import Path
+from pathlib import Path
 from datetime import datetime
 import sys
+import ctypes
+import atexit
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 HISTORY_DIR = BASE_DIR / "historico"
 MASTER_FILE = HISTORY_DIR / "HMA_Master.xlsx"
 LOG_FILE = BASE_DIR / "logs" / "hma_pending_promotion.log"
+
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_writer_mutex = _kernel32.CreateMutexW(None, False, "HMA_HourlyMarketingAnalyzer_Writer_Lock")
+if ctypes.get_last_error() == 183:
+    print("Otra ejecución escritora HMA ya está activa. Se omite promote_hma_pending.py.")
+    sys.exit(0)
+
+atexit.register(lambda: _kernel32.CloseHandle(_writer_mutex) if _writer_mutex else None)
+
 
 
 def log(message: str) -> None:
