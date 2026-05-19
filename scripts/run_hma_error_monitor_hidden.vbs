@@ -7,4 +7,5 @@ logFile.WriteLine Now & " | error_monitor_hidden_vbs_start"
 logFile.Close
 
 shell.CurrentDirectory = "D:\Proyectos\hma-system"
-shell.Run """D:\Proyectos\hma-system\.venv\Scripts\pythonw.exe"" ""D:\Proyectos\hma-system\scripts\hma_error_monitor.py""", 0, False
+shell.Run """D:\Proyectos\hma-system\.venv\Scripts\pythonw.exe"" ""D:\Proyectos\hma-system\scripts\hma_error_monitor.py""", 0, True
+
