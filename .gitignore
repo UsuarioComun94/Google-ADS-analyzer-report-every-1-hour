@@ -8,3 +8,36 @@ exports/
 downloads/
 historico/
 desktop.ini
+
+# --- HMA local runtime / generated files ---
+/data/
+/downloads/
+/historico/
+/error/
+/logs/
+/reports/
+/backups/
+/diagnostics/
+
+# Local diagnostic / patch files
+/HMA_DIAGNOSTICO_ESTADO.txt
+/HMA_FIX_BUNDLE.txt
+/README_APLICAR_CAMBIOS.txt
+
+# Local disabled trigger snapshots
+/_disabled_local_triggers_*/
+
+# Local error backups
+/error_backup_repetidos_*/
+
+# Local downloader backups
+/download_latest_hma_artifact.ps1.backup_*
+
+# Local script patch backups
+/scripts/_patch_backups/
+
+# Generic local backups
+*.backup_*
+*.bak
+*.tmp
+~$*
