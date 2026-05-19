@@ -2,6 +2,23 @@
 $WorkflowFile = "hma-hourly.yml"
 $WorkflowName = "HMA Hourly Demo"
 $BaseProjectDir = "D:\Proyectos\hma-system"
+
+# HMA global anti-concurrency lock.
+# Prevents overlapping downloader/post-processing executions from touching HMA_Master.xlsx at the same time.
+$HmaMutexName = "HMA_HourlyMarketingAnalyzer_Writer_Lock"
+$HmaMutex = New-Object System.Threading.Mutex($false, $HmaMutexName)
+$HmaMutexAcquired = $false
+try {
+    $HmaMutexAcquired = $HmaMutex.WaitOne(0)
+} catch [System.Threading.AbandonedMutexException] {
+    $HmaMutexAcquired = $true
+}
+
+if (-not $HmaMutexAcquired) {
+    Write-Host "Otra ejecución HMA ya está activa. Se omite esta ejecución para evitar concurrencia sobre HMA_Master.xlsx."
+    exit 0
+}
+
 $BaseDownloadDir = Join-Path $BaseProjectDir "downloads"
 $PythonExe = Join-Path $BaseProjectDir ".venv\Scripts\python.exe"
 $UpdateMasterScript = Join-Path $BaseProjectDir "scripts\update_hma_master.py"
