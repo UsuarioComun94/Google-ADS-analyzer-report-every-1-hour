@@ -7,4 +7,5 @@ logFile.WriteLine Now & " | promote_pending_hidden_vbs_start"
 logFile.Close
 
 shell.CurrentDirectory = "D:\Proyectos\hma-system"
-shell.Run """D:\Proyectos\hma-system\.venv\Scripts\pythonw.exe"" ""D:\Proyectos\hma-system\scripts\promote_hma_pending.py""", 0, False
+shell.Run """D:\Proyectos\hma-system\.venv\Scripts\pythonw.exe"" ""D:\Proyectos\hma-system\scripts\promote_hma_pending.py""", 0, True
+
