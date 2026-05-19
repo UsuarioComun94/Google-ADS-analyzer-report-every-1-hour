@@ -365,6 +365,11 @@ $EnsureCrossesScript = Join-Path $BaseProjectDir "scripts\ensure_metric_crosses_
     exit 1
 }
 
+
+if ($MasterBefore -eq $MasterAfter) {
+    Write-Host "Sin cambios reales en HMA_Master.xlsx. Se omite guard final y post-procesado obligatorio."
+    exit 0
+}
 Write-Host "Verificando metric_crosses como guard final..."
 if ((Test-Path $PythonExe) -and (Test-Path $EnsureCrossesScript)) {
     & $PythonExe $EnsureCrossesScript
@@ -412,4 +417,5 @@ if ((Test-Path $PythonExe) -and (Test-Path $EnsureCrossesScript)) {
 }
 
 Write-Host "Post-procesado analítico obligatorio terminado."
+
 
