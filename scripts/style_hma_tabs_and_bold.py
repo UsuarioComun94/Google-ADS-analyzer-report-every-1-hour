@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import shutil
 from datetime import datetime
@@ -192,7 +192,9 @@ def hide_technical_columns(ws) -> None:
             ws.column_dimensions[col_letter].hidden = True
             print(f"Oculta: {ws.title}!{col_letter} ({name})")
         else:
-            ws.column_dimensions[col_letter].hidden = False
+            # No forzar visibilidad global: solo ocultar columnas técnicas.
+            # La visibilidad operativa se repara en repair_hma_layout_visibility.py.
+            pass
 
     if lower(ws["A1"].value) == "timestamp":
         ws.column_dimensions["A"].hidden = False
