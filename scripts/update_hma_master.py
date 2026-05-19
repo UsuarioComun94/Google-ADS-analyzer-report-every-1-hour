@@ -3,6 +3,9 @@ import json
 import math
 import re
 import hashlib
+import ctypes
+import sys
+import atexit
 from datetime import datetime
 from typing import Any
 
@@ -19,6 +22,15 @@ MASTER_FILE = HISTORY_DIR / "HMA_Master.xlsx"
 FINGERPRINT_FILE = HISTORY_DIR / "HMA_Master.fingerprint.json"
 
 HISTORY_DIR.mkdir(exist_ok=True)
+
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_update_mutex = _kernel32.CreateMutexW(None, False, "HMA_UpdateMaster_Lock")
+if ctypes.get_last_error() == 183:
+    print("Otra instancia de update_hma_master.py ya está activa. Se omite esta ejecución.")
+    sys.exit(0)
+
+atexit.register(lambda: _kernel32.CloseHandle(_update_mutex) if _update_mutex else None)
+
 
 # Criterio comercial base para presupuestos diarios altos.
 CHANGE_NOISE_PCT = 2.0
