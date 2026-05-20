@@ -1,4 +1,6 @@
-﻿$ErrorActionPreference = "Continue"
+param([switch]$Silent)
+
+$ErrorActionPreference = "Continue"
 
 $BaseDir = Split-Path -Parent $PSScriptRoot
 $ClientsRoot = Join-Path $BaseDir "clientes"
@@ -133,4 +135,4 @@ Add-Line "FIN HEALTH CHECK"
 Add-Line "Reporte: $report"
 Add-Line "============================================================"
 
-Start-Process notepad.exe $report
+if (-not $Silent) { Start-Process notepad.exe $report }

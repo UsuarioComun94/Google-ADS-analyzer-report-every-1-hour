@@ -507,6 +507,9 @@ function Render($path) {
             Action "Crear backup local ahora" 120 { Run-Bat "backup_hma_local.bat" } "Crea un respaldo ZIP en backups/ con scripts, historico, clientes, masters y raw_exports."
             Action "Abrir carpeta backups" 165 { Open-Folder (Join-Path $BaseDir "backups") } "Abre la carpeta donde quedan guardados los ZIP de backup."
             Action "Health check sistema" 210 { Run-Bat "hma_health_check.bat" } "Ejecuta diagnostico local antes o despues de respaldar."
+            Action "Ver health check semanal" 255 { Run-PS1 "scripts\status_weekly_health_check_task.ps1" } "Muestra estado, ultima ejecucion y proxima ejecucion del diagnostico semanal."
+            Action "Programar health check semanal" 300 { Run-PS1 "scripts\setup_weekly_health_check_task.ps1" } "Programa un diagnostico semanal todos los lunes a las 09:20."
+            Action "Pausar health check semanal" 345 { Run-PS1 "scripts\disable_weekly_health_check_task.ps1" } "Desactiva el diagnostico semanal sin borrar reportes existentes."
         }
 
         "Local\Logs" {
@@ -684,6 +687,9 @@ function Invoke-ActionPath($actionPath) {
         "Local\Backups\Limpiar backups antiguos" { Run-Bat "cleanup_hma_backups.bat" }
         "Local\Backups\Restaurar backup local" { Run-PS1 "scripts\restore_hma_backup_gui.ps1" }
         "Local\Backups\Health check sistema" { Run-Bat "hma_health_check.bat" }
+        "Local\Backups\Ver health check semanal" { Run-PS1 "scripts\status_weekly_health_check_task.ps1" }
+        "Local\Backups\Programar health check semanal" { Run-PS1 "scripts\setup_weekly_health_check_task.ps1" }
+        "Local\Backups\Pausar health check semanal" { Run-PS1 "scripts\disable_weekly_health_check_task.ps1" }
 
         "Administrador\Clientes\Crear cliente" { Run-Bat "create_client.bat" }
         "Administrador\Clientes\Ver clientes creados" { Show-Clients }
