@@ -55,3 +55,32 @@ desktop.ini
 # HMA real client instances - local only
 /clientes/CL-*/
 
+
+# HMA local generated data
+diagnosticos/*.txt
+error/
+backups/
+*.tmp.xlsx
+
+# HMA clients - real client data stays local
+clientes/CL-*/
+!clientes/_template/
+!clientes/_template/**
+
+# Credentials and secrets
+*.env
+**/secrets/
+**/*secret*
+**/*token*
+google-ads.yaml
+**/google-ads.yaml
+
+# Excel generated outputs
+clientes/*/historico/*.xlsx
+clientes/*/raw_exports/
+
+# Python cache
+.pytest_cache/
+
+# Windows
+Thumbs.db
