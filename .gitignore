@@ -51,3 +51,7 @@ desktop.ini
 /clientes/*/historico/*.json
 /clientes/*/historico/*PENDING*
 /clientes/*/historico/*BACKUP*
+
+# HMA real client instances - local only
+/clientes/CL-*/
+
