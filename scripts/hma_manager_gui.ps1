@@ -1,4 +1,4 @@
-﻿Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $ErrorActionPreference = "Stop"
@@ -22,6 +22,79 @@ function Run-File($path) {
     }
     Start-Process -FilePath $path -WorkingDirectory $BaseDir
 }
+
+
+function Show-HmaClients {
+    try {
+        $ClientsRoot = Join-Path $BaseDir "clientes"
+
+        if (-not (Test-Path $ClientsRoot)) {
+            Show-Info "No existe carpeta clientes."
+            return
+        }
+
+        $rows = @()
+
+        Get-ChildItem $ClientsRoot -Directory |
+        Where-Object { $_.Name -ne "_template" } |
+        ForEach-Object {
+            $configPath = Join-Path $_.FullName "config\client_config.json"
+
+            if (Test-Path $configPath) {
+                try {
+                    $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
+
+                    $google = if ($cfg.platforms.google_ads.enabled) { "conectado" } else { "no conectado" }
+                    $meta = if ($cfg.platforms.meta_ads.enabled) { "conectado" } else { "no conectado" }
+
+                    $rows += [PSCustomObject]@{
+                        ID = $cfg.client_id
+                        Cliente = $cfg.client_name
+                        Carpeta = $_.Name
+                        GoogleAds = $google
+                        MetaAds = $meta
+                        Ruta = $_.FullName
+                    }
+                } catch {
+                    $rows += [PSCustomObject]@{
+                        ID = "ERROR"
+                        Cliente = "Config inválida"
+                        Carpeta = $_.Name
+                        GoogleAds = "-"
+                        MetaAds = "-"
+                        Ruta = $_.FullName
+                    }
+                }
+            }
+        }
+
+        if ($rows.Count -eq 0) {
+            Show-Info "No hay clientes creados."
+            return
+        }
+
+        $msg = $rows | Format-Table -AutoSize | Out-String
+
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text = "Clientes HMA"
+        $form.Size = New-Object System.Drawing.Size(1000,600)
+        $form.StartPosition = "CenterScreen"
+
+        $box = New-Object System.Windows.Forms.TextBox
+        $box.Multiline = $true
+        $box.ScrollBars = "Both"
+        $box.ReadOnly = $true
+        $box.Font = New-Object System.Drawing.Font("Consolas", 10)
+        $box.Dock = "Fill"
+        $box.Text = $msg
+
+        $form.Controls.Add($box)
+        [void]$form.ShowDialog()
+    } catch {
+        Show-ErrorBox $_.Exception.Message
+    }
+}
+
 
 function Show-HmaStatus {
     try {
@@ -97,7 +170,7 @@ $git
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "HMA Manager"
-$form.Size = New-Object System.Drawing.Size(460,430)
+$form.Size = New-Object System.Drawing.Size(460,480)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
@@ -126,9 +199,10 @@ function Add-Button($text, $y, $action) {
 
 Add-Button "Crear cliente" 110 { Run-File (Join-Path $BaseDir "create_client.bat") }
 Add-Button "Conectar Google Ads / Meta Ads" 155 { Run-File (Join-Path $BaseDir "connect_ads.bat") }
-Add-Button "Abrir carpeta clientes" 200 { Start-Process explorer.exe (Join-Path $BaseDir "clientes") }
-Add-Button "Ver estado HMA" 245 { Show-HmaStatus }
-Add-Button "Salir" 290 { $form.Close() }
+Add-Button "Ver clientes creados" 200 { Show-HmaClients }
+Add-Button "Abrir carpeta clientes" 245 { Start-Process explorer.exe (Join-Path $BaseDir "clientes") }
+Add-Button "Ver estado HMA" 290 { Show-HmaStatus }
+Add-Button "Salir" 335 { $form.Close() }
 
 [void]$form.ShowDialog()
 
