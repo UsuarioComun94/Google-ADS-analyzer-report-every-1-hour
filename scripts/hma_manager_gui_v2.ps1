@@ -352,6 +352,7 @@ $adminEstado = Add-ChildNode $adminRoot "Estado / Git"
 [void](Add-ChildNode $adminEstado "Ver estado metricas clientes")
 [void](Add-ChildNode $adminEstado "Ver automatizacion metricas 12h")
 [void](Add-ChildNode $adminEstado "Actualizar todas las plataformas ahora")
+[void](Add-ChildNode $adminEstado "Health check sistema")
 
 $tree.ExpandAll()
 
@@ -529,6 +530,7 @@ function Render($path) {
             Action "Ver estado metricas clientes" 165 { Show-ClientMetrics } "Muestra estado de exports por cliente."
             Action "Ver automatizacion metricas 12h" 210 { Show-ClientExportTask } "Muestra estado de la tarea automatica de metricas."
             Action "Actualizar todas las plataformas ahora" 255 { Run-Bat "export_all_clients.bat" } "Exporta Google Ads y Meta Ads de todos los clientes conectados. Es la actualizacion global."
+            Action "Health check sistema" 300 { Run-Bat "hma_health_check.bat" } "Ejecuta un diagnostico local: tareas, clientes, masters, CSV, logs y Git status."
         }
 
         default {
@@ -680,6 +682,7 @@ function Invoke-ActionPath($actionPath) {
         "Administrador\Estado / Git\Ver estado metricas clientes" { Show-ClientMetrics }
         "Administrador\Estado / Git\Ver automatizacion metricas 12h" { Show-ClientExportTask }
         "Administrador\Estado / Git\Actualizar todas las plataformas ahora" { Run-Bat "export_all_clients.bat" }
+        "Administrador\Estado / Git\Health check sistema" { Run-Bat "hma_health_check.bat" }
 
         default { Render-SelectedNode }
     }
