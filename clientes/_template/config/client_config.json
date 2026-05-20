@@ -1,0 +1,28 @@
+﻿{
+  "client_id": "cliente_001",
+  "client_name": "Nombre del cliente",
+  "enabled": true,
+  "platforms": {
+    "google_ads": {
+      "enabled": false,
+      "customer_id": "",
+      "login_customer_id": ""
+    },
+    "meta_ads": {
+      "enabled": false,
+      "ad_account_id": ""
+    }
+  },
+  "paths": {
+    "historico": "historico",
+    "raw_exports": "raw_exports",
+    "downloads": "downloads",
+    "logs": "logs",
+    "error": "error",
+    "secrets": "secrets"
+  },
+  "locks": {
+    "writer_lock": "HMA_cliente_001_Writer_Lock",
+    "update_master_lock": "HMA_cliente_001_UpdateMaster_Lock"
+  }
+}

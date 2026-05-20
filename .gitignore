@@ -41,3 +41,13 @@ desktop.ini
 *.bak
 *.tmp
 ~$*
+# HMA multi-client runtime
+/clientes/*/secrets/
+/clientes/*/raw_exports/
+/clientes/*/downloads/
+/clientes/*/logs/
+/clientes/*/error/
+/clientes/*/historico/*.xlsx
+/clientes/*/historico/*.json
+/clientes/*/historico/*PENDING*
+/clientes/*/historico/*BACKUP*
