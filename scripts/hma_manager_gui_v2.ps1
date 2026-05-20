@@ -338,6 +338,17 @@ $localLogs = Add-ChildNode $localRoot "Logs"
 [void](Add-ChildNode $localLogs "Abrir logs")
 [void](Add-ChildNode $localLogs "Ver Git status")
 
+$localBackups = Add-ChildNode $localRoot "Backups"
+[void](Add-ChildNode $localBackups "Crear backup local ahora")
+[void](Add-ChildNode $localBackups "Ver backup semanal")
+[void](Add-ChildNode $localBackups "Programar backup semanal")
+[void](Add-ChildNode $localBackups "Pausar backup semanal")
+[void](Add-ChildNode $localBackups "Abrir carpeta backups")
+[void](Add-ChildNode $localBackups "Limpiar backups antiguos")
+[void](Add-ChildNode $localBackups "Restaurar backup local")
+[void](Add-ChildNode $localBackups "Crear paquete portable")
+
+
 $adminRoot = Add-RootNode "Administrador"
 $adminClientes = Add-ChildNode $adminRoot "Clientes"
 [void](Add-ChildNode $adminClientes "Crear cliente")
@@ -353,6 +364,9 @@ $adminEstado = Add-ChildNode $adminRoot "Estado / Git"
 [void](Add-ChildNode $adminEstado "Ver automatizacion metricas 12h")
 [void](Add-ChildNode $adminEstado "Actualizar todas las plataformas ahora")
 [void](Add-ChildNode $adminEstado "Ejecutar ciclo completo ahora")
+[void](Add-ChildNode $adminEstado "Ver ciclo completo 12h")
+[void](Add-ChildNode $adminEstado "Activar ciclo completo 12h")
+[void](Add-ChildNode $adminEstado "Pausar ciclo completo 12h")
 [void](Add-ChildNode $adminEstado "Health check sistema")
 
 $tree.ExpandAll()
@@ -543,6 +557,9 @@ function Render($path) {
             Action "Ver estado metricas clientes" 165 { Show-ClientMetrics } "Muestra estado de exports por cliente."
             Action "Ver automatizacion metricas 12h" 210 { Show-ClientExportTask } "Muestra estado de la tarea automatica de metricas."
             Action "Ejecutar ciclo completo ahora" 255 { Run-Bat "hma_run_full_cycle.bat" } "Ejecuta exportacion de metricas, construccion de masters por cliente y health check en una sola corrida."
+            Action "Ver ciclo completo 12h" 300 { Run-PS1 "scripts\status_full_cycle_12h_task.ps1" } "Muestra estado, ultima ejecucion y proxima ejecucion del ciclo completo automatico."
+            Action "Activar ciclo completo 12h" 345 { Run-PS1 "scripts\setup_full_cycle_12h_task.ps1" } "Programa el ciclo completo cada 12 horas: exportar metricas, construir masters y health check."
+            Action "Pausar ciclo completo 12h" 390 { Run-PS1 "scripts\disable_full_cycle_12h_task.ps1" } "Desactiva el ciclo completo automatico cada 12 horas."
             Action "Actualizar todas las plataformas ahora" 255 { Run-Bat "export_all_clients.bat" } "Exporta Google Ads y Meta Ads de todos los clientes conectados. Es la actualizacion global."
             Action "Health check sistema" 300 { Run-Bat "hma_health_check.bat" } "Ejecuta un diagnostico local: tareas, clientes, masters, CSV, logs y Git status."
         }
@@ -707,6 +724,9 @@ function Invoke-ActionPath($actionPath) {
         "Administrador\Estado / Git\Ver automatizacion metricas 12h" { Show-ClientExportTask }
         "Administrador\Estado / Git\Actualizar todas las plataformas ahora" { Run-Bat "export_all_clients.bat" }
         "Administrador\Estado / Git\Ejecutar ciclo completo ahora" { Run-Bat "hma_run_full_cycle.bat" }
+        "Administrador\Estado / Git\Ver ciclo completo 12h" { Run-PS1 "scripts\status_full_cycle_12h_task.ps1" }
+        "Administrador\Estado / Git\Activar ciclo completo 12h" { Run-PS1 "scripts\setup_full_cycle_12h_task.ps1" }
+        "Administrador\Estado / Git\Pausar ciclo completo 12h" { Run-PS1 "scripts\disable_full_cycle_12h_task.ps1" }
         "Administrador\Estado / Git\Health check sistema" { Run-Bat "hma_health_check.bat" }
 
         default { Render-SelectedNode }

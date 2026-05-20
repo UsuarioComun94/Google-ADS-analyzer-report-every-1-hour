@@ -84,3 +84,13 @@ clientes/*/raw_exports/
 
 # Windows
 Thumbs.db
+
+# HMA portable generated packages
+portable_packages/
+
+# HMA local backups generated data
+backups/*.zip
+backups/HMA_BACKUP_*/
+backups/pre_restore/
+
+# HMA diagnostics generated reports
