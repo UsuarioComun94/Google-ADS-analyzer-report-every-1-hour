@@ -500,6 +500,15 @@ function Render($path) {
             Action "Abrir HMA_Master.xlsx" 165 { Open-File $MasterFile } "Abre Excel maestro principal."
         }
 
+
+        "Local\Backups" {
+            Title "Local > Backups" 20
+            Desc "Respaldo local del sistema HMA, clientes, masters y exports." 60
+            Action "Crear backup local ahora" 120 { Run-Bat "backup_hma_local.bat" } "Crea un respaldo ZIP en backups/ con scripts, historico, clientes, masters y raw_exports."
+            Action "Abrir carpeta backups" 165 { Open-Folder (Join-Path $BaseDir "backups") } "Abre la carpeta donde quedan guardados los ZIP de backup."
+            Action "Health check sistema" 210 { Run-Bat "hma_health_check.bat" } "Ejecuta diagnostico local antes o despues de respaldar."
+        }
+
         "Local\Logs" {
             Title "Local > Logs" 20
             Desc "Revision de logs locales." 60
@@ -669,6 +678,10 @@ function Invoke-ActionPath($actionPath) {
 
         "Local\Logs\Abrir logs" { Open-Folder $LogsDir }
         "Local\Logs\Ver Git status" { Show-GitStatus }
+
+        "Local\Backups\Crear backup local ahora" { Run-Bat "backup_hma_local.bat" }
+        "Local\Backups\Abrir carpeta backups" { Open-Folder (Join-Path $BaseDir "backups") }
+        "Local\Backups\Health check sistema" { Run-Bat "hma_health_check.bat" }
 
         "Administrador\Clientes\Crear cliente" { Run-Bat "create_client.bat" }
         "Administrador\Clientes\Ver clientes creados" { Show-Clients }
