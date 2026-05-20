@@ -681,6 +681,7 @@ function Invoke-ActionPath($actionPath) {
 
         "Local\Backups\Crear backup local ahora" { Run-Bat "backup_hma_local.bat" }
         "Local\Backups\Abrir carpeta backups" { Open-Folder (Join-Path $BaseDir "backups") }
+        "Local\Backups\Limpiar backups antiguos" { Run-Bat "cleanup_hma_backups.bat" }
         "Local\Backups\Health check sistema" { Run-Bat "hma_health_check.bat" }
 
         "Administrador\Clientes\Crear cliente" { Run-Bat "create_client.bat" }

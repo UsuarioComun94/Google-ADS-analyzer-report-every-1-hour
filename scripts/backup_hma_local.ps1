@@ -90,6 +90,17 @@ if (Test-Path $zipPath) {
 Compress-Archive -Path (Join-Path $backupDir "*") -DestinationPath $zipPath -Force
 
 Log "ZIP creado: $zipPath"
+
+$CleanupScript = Join-Path $BaseDir "scripts\cleanup_hma_backups.ps1"
+
+if (Test-Path $CleanupScript) {
+    Log "Ejecutando limpieza automatica de backups antiguos..."
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File $CleanupScript -KeepLast 8 2>&1 |
+    ForEach-Object { Log "CLEANUP: $_" }
+} else {
+    Log "SKIP CLEANUP: no existe $CleanupScript"
+}
+
 Log "=== HMA BACKUP END ==="
 
 if (-not $Silent) { Start-Process explorer.exe $BackupRoot }
