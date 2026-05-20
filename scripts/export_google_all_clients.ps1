@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Continue"
 
 $BaseDir = Split-Path -Parent $PSScriptRoot
 $ClientsRoot = Join-Path $BaseDir "clientes"
@@ -64,6 +64,18 @@ foreach ($clientDir in $clients) {
     } catch {
         Log "ERROR cliente $($clientDir.Name): $($_.Exception.Message)"
     }
+}
+
+
+$BuildMastersScript = Join-Path $BaseDir "scripts\build_all_client_masters.ps1"
+
+if (Test-Path $BuildMastersScript) {
+    Log "=== BUILD CLIENT MASTERS AFTER EXPORT START ==="
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File $BuildMastersScript 2>&1 |
+    ForEach-Object { Log "BUILD_MASTER: $_" }
+    Log "=== BUILD CLIENT MASTERS AFTER EXPORT END ==="
+} else {
+    Log "SKIP_BUILD_MASTERS: no existe $BuildMastersScript"
 }
 
 Log "=== HMA GOOGLE ADS EXPORT END ==="
