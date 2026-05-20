@@ -352,6 +352,7 @@ $adminEstado = Add-ChildNode $adminRoot "Estado / Git"
 [void](Add-ChildNode $adminEstado "Ver estado metricas clientes")
 [void](Add-ChildNode $adminEstado "Ver automatizacion metricas 12h")
 [void](Add-ChildNode $adminEstado "Actualizar todas las plataformas ahora")
+[void](Add-ChildNode $adminEstado "Ejecutar ciclo completo ahora")
 [void](Add-ChildNode $adminEstado "Health check sistema")
 
 $tree.ExpandAll()
@@ -541,6 +542,7 @@ function Render($path) {
             Action "Ver Git status" 120 { Show-GitStatus } "Muestra cambios pendientes del repositorio."
             Action "Ver estado metricas clientes" 165 { Show-ClientMetrics } "Muestra estado de exports por cliente."
             Action "Ver automatizacion metricas 12h" 210 { Show-ClientExportTask } "Muestra estado de la tarea automatica de metricas."
+            Action "Ejecutar ciclo completo ahora" 255 { Run-Bat "hma_run_full_cycle.bat" } "Ejecuta exportacion de metricas, construccion de masters por cliente y health check en una sola corrida."
             Action "Actualizar todas las plataformas ahora" 255 { Run-Bat "export_all_clients.bat" } "Exporta Google Ads y Meta Ads de todos los clientes conectados. Es la actualizacion global."
             Action "Health check sistema" 300 { Run-Bat "hma_health_check.bat" } "Ejecuta un diagnostico local: tareas, clientes, masters, CSV, logs y Git status."
         }
@@ -686,6 +688,7 @@ function Invoke-ActionPath($actionPath) {
         "Local\Backups\Abrir carpeta backups" { Open-Folder (Join-Path $BaseDir "backups") }
         "Local\Backups\Limpiar backups antiguos" { Run-Bat "cleanup_hma_backups.bat" }
         "Local\Backups\Restaurar backup local" { Run-PS1 "scripts\restore_hma_backup_gui.ps1" }
+        "Local\Backups\Crear paquete portable" { Run-Bat "create_hma_portable_package.bat" }
         "Local\Backups\Health check sistema" { Run-Bat "hma_health_check.bat" }
         "Local\Backups\Ver health check semanal" { Run-PS1 "scripts\status_weekly_health_check_task.ps1" }
         "Local\Backups\Programar health check semanal" { Run-PS1 "scripts\setup_weekly_health_check_task.ps1" }
@@ -703,6 +706,7 @@ function Invoke-ActionPath($actionPath) {
         "Administrador\Estado / Git\Ver estado metricas clientes" { Show-ClientMetrics }
         "Administrador\Estado / Git\Ver automatizacion metricas 12h" { Show-ClientExportTask }
         "Administrador\Estado / Git\Actualizar todas las plataformas ahora" { Run-Bat "export_all_clients.bat" }
+        "Administrador\Estado / Git\Ejecutar ciclo completo ahora" { Run-Bat "hma_run_full_cycle.bat" }
         "Administrador\Estado / Git\Health check sistema" { Run-Bat "hma_health_check.bat" }
 
         default { Render-SelectedNode }
