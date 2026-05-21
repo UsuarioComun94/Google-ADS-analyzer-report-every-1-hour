@@ -29,6 +29,14 @@ function GoogleAdsLogo() {
     });
   };
 
+  const runReportNow = async (freq) => {
+    setRunReportPicker(null);
+    await handleAction({
+      title: `Generar informe ${freq} ahora`,
+      command: `run-report-now:${freq}`
+    });
+  };
+
   return (
     <div className="platform-logo">
       <svg viewBox="0 0 64 64">
@@ -99,6 +107,7 @@ const menuData = [
         description: "Controla automatizaciones relacionadas con metricas cada 12 horas.",
         actions: [
           { title: "Ver automatizacion de informes", subtitle: "Consulta estado de la tarea automatica.", icon: Clock3, command: "hma_report_frequency_status.bat", help: "Muestra la frecuencia activa, ultima ejecucion y proxima corrida." },
+          { title: "Generar informe ahora", subtitle: "Elegí frecuencia y genera el informe manualmente.", icon: RefreshCw, command: "choose-run-report-now", help: "Permite generar un informe manual inmediato con frecuencia 1h, 3h, 5h, 7h, 12h, 1d, 2d o 1w." },
           { title: "Configurar frecuencia de informes", subtitle: "Activa el ciclo completo automatico.", icon: Play, command: "choose-report-frequency", help: "Activa el flujo completo cada 12 horas." },
           { title: "Pausar automatizacion de informes", subtitle: "Pausa la automatizacion completa.", icon: Pause, command: "hma_report_frequency_disable.bat", help: "Pausa la tarea sin borrar datos." },
           { title: "Abrir logs", subtitle: "Abre registros del sistema.", icon: FolderOpen, command: "logs", help: "Abre la carpeta de logs." }
@@ -130,6 +139,7 @@ const menuData = [
         description: "Controla automatizaciones relacionadas con metricas cada 12 horas.",
         actions: [
           { title: "Ver automatizacion de informes", subtitle: "Consulta estado de la tarea automatica.", icon: Clock3, command: "hma_report_frequency_status.bat", help: "Muestra la frecuencia activa, ultima ejecucion y proxima corrida." },
+          { title: "Generar informe ahora", subtitle: "Elegí frecuencia y genera el informe manualmente.", icon: RefreshCw, command: "choose-run-report-now", help: "Permite generar un informe manual inmediato con frecuencia 1h, 3h, 5h, 7h, 12h, 1d, 2d o 1w." },
           { title: "Configurar frecuencia de informes", subtitle: "Activa el ciclo completo automatico.", icon: Play, command: "choose-report-frequency", help: "Activa el flujo completo cada 12 horas." },
           { title: "Pausar automatizacion de informes", subtitle: "Pausa la automatizacion completa.", icon: Pause, command: "hma_report_frequency_disable.bat", help: "Pausa la tarea sin borrar datos." },
           { title: "Abrir logs", subtitle: "Abre registros del sistema.", icon: FolderOpen, command: "logs", help: "Abre la carpeta de logs." }
@@ -239,6 +249,7 @@ export default function App() {
   const [runningTitle, setRunningTitle] = useState("");
   const [systemStatus, setSystemStatus] = useState(null);
   const [frequencyPicker, setFrequencyPicker] = useState(null);
+  const [runReportPicker, setRunReportPicker] = useState(null);
   const frequencyOptions = [
     { key: "1h", label: "Cada 1 hora", detail: "Genera informes en Informe_1h." },
     { key: "3h", label: "Cada 3 horas", detail: "Genera informes en Informe_3h." },
@@ -292,6 +303,11 @@ export default function App() {
   const handleAction = async (action) => {
     if (action.command === "choose-report-frequency") {
       setFrequencyPicker(action);
+      return;
+    }
+
+    if (action.command === "choose-run-report-now") {
+      setRunReportPicker(action);
       return;
     }
     setRunningTitle(action.title);
@@ -441,6 +457,34 @@ export default function App() {
         <div className="neural-bg"><span /><span /><span /><span /></div>
       </main>
 
+
+
+      {runReportPicker && (
+        <div className="modal-backdrop" onClick={() => setRunReportPicker(null)}>
+          <div className="help-modal frequency-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="help-modal-header">
+              <div className="help-modal-icon"><RefreshCw size={20} /></div>
+              <div>
+                <h4>Generar informe ahora</h4>
+                <p>Elegí la frecuencia del informe manual que querés generar.</p>
+              </div>
+            </div>
+
+            <div className="frequency-grid">
+              {frequencyOptions.map((option) => (
+                <button key={option.key} className="frequency-option" onClick={() => runReportNow(option.key)}>
+                  <strong>{option.label}</strong>
+                  <span>{option.detail}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="help-modal-footer">
+              <button className="primary-btn" onClick={() => setRunReportPicker(null)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {frequencyPicker && (
         <div className="modal-backdrop" onClick={() => setFrequencyPicker(null)}>

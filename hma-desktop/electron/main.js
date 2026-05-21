@@ -259,6 +259,40 @@ async function executeAction(payload) {
     };
   }
 
+  if (command.startsWith("run-report-now:")) {
+    const frequency = command.replace("run-report-now:", "").trim();
+    const allowed = ["1h", "3h", "5h", "7h", "12h", "1d", "2d", "1w"];
+
+    if (!allowed.includes(frequency)) {
+      return {
+        ok: false,
+        title,
+        command,
+        stdout: "",
+        stderr: `Frecuencia no permitida: ${frequency}`
+      };
+    }
+
+    const script = path.join(baseDir, "scripts", "hma_report_engine.ps1");
+
+    const result = await runProcess("powershell.exe", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      script,
+      "-Frequency",
+      frequency
+    ], baseDir);
+
+    return appendGeneratedFilesToResult({
+      ...result,
+      title,
+      command,
+      stdout: result.stdout || `Informe generado manualmente: ${frequency}`
+    }, startMs);
+  }
+
   if (command.startsWith("set-report-frequency:")) {
     const frequency = command.replace("set-report-frequency:", "").trim();
     const allowed = ["1h", "3h", "5h", "7h", "12h", "1d", "2d", "1w"];
