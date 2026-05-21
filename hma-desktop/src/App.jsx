@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -237,6 +237,7 @@ export default function App() {
   const [helpItem, setHelpItem] = useState(null);
   const [runResult, setRunResult] = useState(null);
   const [runningTitle, setRunningTitle] = useState("");
+  const [systemStatus, setSystemStatus] = useState(null);
   const [frequencyPicker, setFrequencyPicker] = useState(null);
   const frequencyOptions = [
     { key: "1h", label: "Cada 1 hora", detail: "Genera informes en Informe_1h." },
@@ -248,6 +249,33 @@ export default function App() {
     { key: "2d", label: "Cada 2 dias", detail: "Genera informes en Informe_2d." },
     { key: "1w", label: "Cada 1 semana", detail: "Genera informes en Informe_1w." }
   ];
+
+  const loadSystemStatus = async () => {
+    try {
+      if (window.hma?.getSystemStatus) {
+        const status = await window.hma.getSystemStatus();
+        setSystemStatus(status);
+      }
+    } catch (error) {
+      setSystemStatus({
+        clientsCount: 0,
+        backupsCount: 0,
+        reportsCount: 0,
+        gitClean: false,
+        gitStatus: error?.message || String(error),
+        activeFrequency: "Error",
+        activeTaskName: "No disponible",
+        activeTaskState: "Error",
+        healthy: false
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadSystemStatus();
+    const timer = setInterval(loadSystemStatus, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const { section, child } = useMemo(() => getSelected(menuData, selectedKey), [selectedKey]);
 
@@ -285,6 +313,7 @@ export default function App() {
       setRunResult({ title: action.title, command: action.command, ok: false, stdout: "", stderr: error?.message || String(error) });
     } finally {
       setRunningTitle("");
+      loadSystemStatus();
     }
   };
 
@@ -356,11 +385,36 @@ export default function App() {
             <div className="status-card">
               <div className="status-icon"><ShieldCheck size={22} /></div>
               <div>
-                <small>Estado general</small>
-                <strong>Operativo</strong>
+                <small>{systemStatus?.gitClean ? "Git limpio" : "Git con cambios"}</small>
+                <strong>{systemStatus?.healthy === false ? "Revisar" : "Operativo"}</strong>
               </div>
             </div>
           </header>
+
+          {systemStatus && (
+            <section className="live-status-grid">
+              <div className="live-status-card">
+                <small>Clientes</small>
+                <strong>{systemStatus.clientsCount}</strong>
+              </div>
+
+              <div className="live-status-card">
+                <small>Backups ZIP</small>
+                <strong>{systemStatus.backupsCount}</strong>
+              </div>
+
+              <div className="live-status-card">
+                <small>Informes</small>
+                <strong>{systemStatus.reportsCount}</strong>
+              </div>
+
+              <div className="live-status-card live-status-card-wide">
+                <small>Automatizacion activa</small>
+                <strong>{systemStatus.activeFrequency}</strong>
+                <span>{systemStatus.nextRunTime ? `Proxima: ${systemStatus.nextRunTime}` : systemStatus.activeTaskState}</span>
+              </div>
+            </section>
+          )}
 
           <section className="cards-list">
             {child.actions.map((action) => {

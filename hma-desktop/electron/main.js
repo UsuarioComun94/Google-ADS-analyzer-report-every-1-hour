@@ -412,6 +412,105 @@ async function executeAction(payload) {
   };
 }
 
+
+function countFilesRecursive(root, extensions) {
+  if (!fs.existsSync(root)) return 0;
+
+  let count = 0;
+  const items = fs.readdirSync(root, { withFileTypes: true });
+
+  for (const item of items) {
+    const full = path.join(root, item.name);
+
+    if (item.isDirectory()) {
+      count += countFilesRecursive(full, extensions);
+    } else if (extensions.includes(path.extname(item.name).toLowerCase())) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
+function getDirectoriesSafe(root) {
+  if (!fs.existsSync(root)) return [];
+
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((item) => item.isDirectory())
+    .map((item) => item.name);
+}
+
+async function getSystemStatus() {
+  const clientsRoot = path.join(baseDir, "clientes");
+  const backupsRoot = path.join(baseDir, "backups");
+
+  const clients = getDirectoriesSafe(clientsRoot).filter((name) => !name.startsWith("_"));
+  const backups = fs.existsSync(backupsRoot)
+    ? fs.readdirSync(backupsRoot).filter((name) => name.toLowerCase().endsWith(".zip"))
+    : [];
+
+  const reportsCount = countFilesRecursive(clientsRoot, [".xlsx"]);
+  const gitResult = await runProcess("git", ["-C", baseDir, "status", "--short"]);
+
+  const ps = `
+    $tasks = Get-ScheduledTask -ErrorAction SilentlyContinue |
+      Where-Object { $_.TaskName -like 'HMA Informe *' } |
+      ForEach-Object {
+        $info = Get-ScheduledTaskInfo -TaskName $_.TaskName -ErrorAction SilentlyContinue
+        [PSCustomObject]@{
+          TaskName = $_.TaskName
+          State = "$($_.State)"
+          LastRunTime = if ($info) { "$($info.LastRunTime)" } else { "" }
+          NextRunTime = if ($info) { "$($info.NextRunTime)" } else { "" }
+          LastTaskResult = if ($info) { "$($info.LastTaskResult)" } else { "" }
+        }
+      }
+
+    if ($tasks) {
+      $tasks | ConvertTo-Json -Compress
+    } else {
+      "[]"
+    }
+  `;
+
+  const taskResult = await runProcess("powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    ps
+  ]);
+
+  let reportTasks = [];
+
+  try {
+    const parsed = JSON.parse((taskResult.stdout || "[]").trim() || "[]");
+    reportTasks = Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    reportTasks = [];
+  }
+
+  const activeTask = reportTasks.find((task) => task.State === "Ready" || task.State === "Running");
+  const activeFrequency = activeTask ? activeTask.TaskName.replace("HMA Informe ", "") : "";
+
+  return {
+    clientsCount: clients.length,
+    backupsCount: backups.length,
+    reportsCount,
+    gitClean: !(gitResult.stdout || "").trim(),
+    gitStatus: (gitResult.stdout || "").trim() || "Git limpio.",
+    activeFrequency: activeFrequency || "Sin configurar",
+    activeTaskName: activeTask ? activeTask.TaskName : "Sin tarea activa",
+    activeTaskState: activeTask ? activeTask.State : "No configurada",
+    nextRunTime: activeTask ? activeTask.NextRunTime : "",
+    lastRunTime: activeTask ? activeTask.LastRunTime : "",
+    healthy: true
+  };
+}
+
+
+
 ipcMain.handle("hma:run-action", async (_event, payload) => {
   try {
     return await executeAction(payload);
@@ -428,6 +527,10 @@ ipcMain.handle("hma:run-action", async (_event, payload) => {
 
 ipcMain.handle("hma:get-base-dir", async () => {
   return baseDir;
+});
+
+ipcMain.handle("hma:get-system-status", async () => {
+  return await getSystemStatus();
 });
 
 app.whenReady().then(() => {
