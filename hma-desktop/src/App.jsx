@@ -248,6 +248,8 @@ export default function App() {
   const [runResult, setRunResult] = useState(null);
   const [runningTitle, setRunningTitle] = useState("");
   const [systemStatus, setSystemStatus] = useState(null);
+  const [detailModal, setDetailModal] = useState(null);
+  const [clientAreaModal, setClientAreaModal] = useState(null);
   const [frequencyPicker, setFrequencyPicker] = useState(null);
   const [runReportPicker, setRunReportPicker] = useState(null);
   const frequencyOptions = [
@@ -281,6 +283,156 @@ export default function App() {
       });
     }
   };
+
+  const openDashboardPath = async (targetPath) => {
+    if (!targetPath) return;
+
+    try {
+      if (window.hma?.openPath) {
+        await window.hma.openPath(targetPath);
+      }
+    } catch (error) {
+      setRunResult({
+        title: "Abrir ruta",
+        command: targetPath,
+        ok: false,
+        stdout: "",
+        stderr: error?.message || String(error)
+      });
+    }
+  };
+
+  const revealDashboardPath = async (targetPath) => {
+    if (!targetPath) return;
+
+    try {
+      if (window.hma?.revealPath) {
+        await window.hma.revealPath(targetPath);
+      }
+    } catch (error) {
+      setRunResult({
+        title: "Abrir ubicacion",
+        command: targetPath,
+        ok: false,
+        stdout: "",
+        stderr: error?.message || String(error)
+      });
+    }
+  };
+
+  const openClientArea = async (item) => {
+    if (!item?.ruta) return;
+
+    setClientAreaModal({
+      loading: true,
+      cliente: item.cliente || "Cliente",
+      paths: { root: item.ruta }
+    });
+
+    try {
+      if (!window.hma?.getClientArea) {
+        setClientAreaModal({
+          loading: false,
+          cliente: item.cliente || "Cliente",
+          error: "getClientArea no esta disponible en preload.",
+          paths: { root: item.ruta }
+        });
+        return;
+      }
+
+      const data = await window.hma.getClientArea(item.ruta);
+      setClientAreaModal({ loading: false, ...data });
+    } catch (error) {
+      setClientAreaModal({
+        loading: false,
+        cliente: item.cliente || "Cliente",
+        error: error?.message || String(error),
+        paths: { root: item.ruta }
+      });
+    }
+  };
+
+  const handleDetailAction = async (item) => {
+    if (!detailModal || !item) return;
+
+    const detailType = detailModal.type;
+
+    // Cierra primero la ventana de detalle para evitar modales superpuestos.
+    setDetailModal(null);
+
+    if (detailType === "clients") {
+      await openClientArea(item);
+      return;
+    }
+
+    if (item.ruta) {
+      await revealDashboardPath(item.ruta);
+    }
+  };
+
+
+  const openDetailModal = async (type) => {
+    const fallbackTitles = {
+      clients: "Clientes creados",
+      backups: "Backups ZIP",
+      reports: "Informes generados",
+      automation: "Automatizacion activa"
+    };
+
+    setDetailModal({
+      type,
+      title: fallbackTitles[type] || "Detalle",
+      subtitle: "Cargando datos...",
+      columns: [],
+      items: [],
+      loading: true
+    });
+
+    try {
+      if (type === "automation") {
+        setDetailModal({
+          type,
+          title: "Automatizacion activa",
+          subtitle: "Estado actual de la programacion de informes.",
+          columns: [
+            { key: "campo", label: "Campo" },
+            { key: "valor", label: "Valor" }
+          ],
+          items: [
+            { campo: "Frecuencia", valor: systemStatus?.activeFrequency || "Sin configurar" },
+            { campo: "Tarea", valor: systemStatus?.activeTaskName || "Sin tarea activa" },
+            { campo: "Estado", valor: systemStatus?.activeTaskState || "No configurada" },
+            { campo: "Ultima ejecucion", valor: systemStatus?.lastRunTime || "Sin dato" },
+            { campo: "Proxima ejecucion", valor: systemStatus?.nextRunTime || "Sin dato" }
+          ]
+        });
+        return;
+      }
+
+      if (!window.hma?.getDetailList) {
+        setDetailModal({
+          type,
+          title: fallbackTitles[type] || "Detalle",
+          subtitle: "Electron preload no expone getDetailList.",
+          columns: [],
+          items: []
+        });
+        return;
+      }
+
+      const data = await window.hma.getDetailList(type);
+      setDetailModal(data);
+    } catch (error) {
+      setDetailModal({
+        type,
+        title: fallbackTitles[type] || "Detalle",
+        subtitle: error?.message || String(error),
+        columns: [],
+        items: []
+      });
+    }
+  };
+
 
   useEffect(() => {
     loadSystemStatus();
@@ -406,31 +558,34 @@ export default function App() {
               </div>
             </div>
           </header>
-
           {systemStatus && (
             <section className="live-status-grid">
-              <div className="live-status-card">
+              <button className="live-status-card clickable" onClick={() => openDetailModal("clients")}>
                 <small>Clientes</small>
                 <strong>{systemStatus.clientsCount}</strong>
-              </div>
+                <span>Ver detalle</span>
+              </button>
 
-              <div className="live-status-card">
+              <button className="live-status-card clickable" onClick={() => openDetailModal("backups")}>
                 <small>Backups ZIP</small>
                 <strong>{systemStatus.backupsCount}</strong>
-              </div>
+                <span>Ver archivos</span>
+              </button>
 
-              <div className="live-status-card">
+              <button className="live-status-card clickable" onClick={() => openDetailModal("reports")}>
                 <small>Informes</small>
                 <strong>{systemStatus.reportsCount}</strong>
-              </div>
+                <span>Ver reportes</span>
+              </button>
 
-              <div className="live-status-card live-status-card-wide">
+              <button className="live-status-card live-status-card-wide clickable" onClick={() => openDetailModal("automation")}>
                 <small>Automatizacion activa</small>
                 <strong>{systemStatus.activeFrequency}</strong>
                 <span>{systemStatus.nextRunTime ? `Proxima: ${systemStatus.nextRunTime}` : systemStatus.activeTaskState}</span>
-              </div>
+              </button>
             </section>
           )}
+
 
           <section className="cards-list">
             {child.actions.map((action) => {
@@ -458,6 +613,133 @@ export default function App() {
       </main>
 
 
+
+
+
+      {clientAreaModal && (
+        <div className="modal-backdrop" onClick={() => setClientAreaModal(null)}>
+          <div className="help-modal client-area-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="help-modal-header">
+              <div className="help-modal-icon"><Activity size={20} /></div>
+              <div>
+                <h4>{clientAreaModal.cliente}</h4>
+                <p>{clientAreaModal.loading ? "Cargando area del cliente..." : "Ficha operativa del cliente dentro de HMA."}</p>
+              </div>
+            </div>
+
+            {clientAreaModal.error && (
+              <div className="output-box output-box-error">
+                <strong>Error</strong>
+                <pre>{clientAreaModal.error}</pre>
+              </div>
+            )}
+
+            {!clientAreaModal.loading && (
+              <>
+                <div className="client-area-grid">
+                  <div className="client-area-stat">
+                    <small>ID</small>
+                    <strong>{clientAreaModal.id || "-"}</strong>
+                  </div>
+
+                  <div className="client-area-stat">
+                    <small>Google Ads</small>
+                    <strong>{clientAreaModal.google || "Sin dato"}</strong>
+                  </div>
+
+                  <div className="client-area-stat">
+                    <small>Meta Ads</small>
+                    <strong>{clientAreaModal.meta || "Sin dato"}</strong>
+                  </div>
+
+                  <div className="client-area-stat">
+                    <small>Master</small>
+                    <strong>{clientAreaModal.master || "-"}</strong>
+                  </div>
+
+                  <div className="client-area-stat">
+                    <small>Informes</small>
+                    <strong>{clientAreaModal.informes ?? 0}</strong>
+                  </div>
+
+                  <div className="client-area-stat">
+                    <small>CSV raw</small>
+                    <strong>{clientAreaModal.rawCsv ?? 0}</strong>
+                  </div>
+                </div>
+
+                <div className="client-actions-grid">
+                  <button onClick={() => openDashboardPath(clientAreaModal.paths?.root)}>Abrir carpeta cliente</button>
+                  <button onClick={() => openDashboardPath(clientAreaModal.paths?.master)}>Abrir master</button>
+                  <button onClick={() => openDashboardPath(clientAreaModal.paths?.reports)}>Abrir informes</button>
+                  <button onClick={() => openDashboardPath(clientAreaModal.paths?.rawExports)}>Abrir raw exports</button>
+                  <button onClick={() => openDashboardPath(clientAreaModal.paths?.config)}>Abrir config</button>
+                  <button onClick={() => openDashboardPath(clientAreaModal.paths?.historic)}>Abrir historico</button>
+                </div>
+              </>
+            )}
+
+            <div className="help-modal-footer">
+              <button className="primary-btn" onClick={() => setClientAreaModal(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailModal && (
+        <div className="modal-backdrop" onClick={() => setDetailModal(null)}>
+          <div className="help-modal detail-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="help-modal-header">
+              <div className="help-modal-icon"><Activity size={20} /></div>
+              <div>
+                <h4>{detailModal.title}</h4>
+                <p>{detailModal.subtitle}</p>
+              </div>
+            </div>
+
+            <div className="detail-table-wrap">
+              {detailModal.loading && <div className="empty-state">Cargando...</div>}
+
+              {!detailModal.loading && (!detailModal.items || detailModal.items.length === 0) && (
+                <div className="empty-state">No hay datos para mostrar.</div>
+              )}
+
+              {!detailModal.loading && detailModal.items && detailModal.items.length > 0 && (
+                <table className="detail-table">
+                  <thead>
+                    <tr>
+                      {detailModal.columns.map((column) => (
+                        <th key={column.key}>{column.label}</th>
+                      ))}
+                      {detailModal.type !== "automation" && <th>Acciones</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailModal.items.map((item, index) => (
+                      <tr key={index}>
+                        {detailModal.columns.map((column) => (
+                          <td key={column.key}>{item[column.key] || "-"}</td>
+                        ))}
+                        {detailModal.type !== "automation" && (
+                          <td>
+                            <button className="row-action-btn" onClick={() => handleDetailAction(item)}>
+                              {detailModal.type === "clients" ? "Abrir area" : "Abrir ubicacion"}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="help-modal-footer">
+              <button className="primary-btn" onClick={() => setDetailModal(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {runReportPicker && (
         <div className="modal-backdrop" onClick={() => setRunReportPicker(null)}>
