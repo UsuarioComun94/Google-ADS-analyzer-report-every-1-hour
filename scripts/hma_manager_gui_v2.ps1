@@ -366,6 +366,8 @@ $adminEstado = Add-ChildNode $adminRoot "Estado / Git"
 [void](Add-ChildNode $adminEstado "Ejecutar ciclo completo ahora")
 [void](Add-ChildNode $adminEstado "Ver ciclo completo 12h")
 [void](Add-ChildNode $adminEstado "Ver todas las automatizaciones")
+[void](Add-ChildNode $adminEstado "Validacion QA completa")
+[void](Add-ChildNode $adminEstado "Pausar tarea legacy export")
 [void](Add-ChildNode $adminEstado "Activar ciclo completo 12h")
 [void](Add-ChildNode $adminEstado "Pausar ciclo completo 12h")
 [void](Add-ChildNode $adminEstado "Health check sistema")
@@ -937,7 +939,6 @@ function Build-HelpText($actionName, $shortHelp) {
         "Ver tareas HMA actual" = "Muestra las tareas del HMA original basado en GitHub artifacts."
         "Reanudar HMA actual" = "Reactiva las tareas locales del HMA original."
         "Pausar HMA actual" = "Pausa las tareas locales del HMA original."
-        "Abrir carpeta backups" = "Abre la carpeta donde se guardan los ZIP de backup."
         "Ver health check semanal" = "Muestra si el diagnostico semanal esta programado, cuando corrio por ultima vez y cuando vuelve a correr."
         "Programar health check semanal" = "Programa un diagnostico automatico semanal del sistema."
         "Pausar health check semanal" = "Pausa el diagnostico semanal automatico sin borrar reportes existentes."
@@ -1132,6 +1133,8 @@ function Render($path) {
             Action "Ejecutar ciclo completo ahora" 255 { Run-Bat "hma_run_full_cycle.bat" } "Ejecuta exportacion de metricas, construccion de masters por cliente y health check en una sola corrida."
             Action "Ver ciclo completo 12h" 300 { Run-PS1 "scripts\status_full_cycle_12h_task.ps1" } "Muestra estado, ultima ejecucion y proxima ejecucion del ciclo completo automatico."
             Action "Ver todas las automatizaciones" 345 { Run-Bat "hma_automation_overview.bat" } "Muestra un reporte general de todas las tareas programadas HMA: estado, ultima ejecucion y proxima ejecucion."
+            Action "Validacion QA completa" 390 { Run-Bat "hma_qa_validation.bat" } "Ejecuta una revision general: archivos, dashboard, tareas, clientes, masters, backups y Git."
+            Action "Pausar tarea legacy export" 435 { Run-PS1 "scripts\disable_legacy_client_export_task.ps1" } "Pausa la tarea antigua HMA Client Ads Export Every 12 Hours para evitar duplicidad con el ciclo completo 12h."
             Action "Activar ciclo completo 12h" 345 { Run-PS1 "scripts\setup_full_cycle_12h_task.ps1" } "Programa el ciclo completo cada 12 horas: exportar metricas, construir masters y health check."
             Action "Pausar ciclo completo 12h" 390 { Run-PS1 "scripts\disable_full_cycle_12h_task.ps1" } "Desactiva el ciclo completo automatico cada 12 horas."
             Action "Actualizar todas las plataformas ahora" 255 { Run-Bat "export_all_clients.bat" } "Exporta Google Ads y Meta Ads de todos los clientes conectados. Es la actualizacion global."
@@ -1300,6 +1303,8 @@ function Invoke-ActionPath($actionPath) {
         "Administrador\Estado / Git\Ejecutar ciclo completo ahora" { Run-Bat "hma_run_full_cycle.bat" }
         "Administrador\Estado / Git\Ver ciclo completo 12h" { Run-PS1 "scripts\status_full_cycle_12h_task.ps1" }
         "Administrador\Estado / Git\Ver todas las automatizaciones" { Run-Bat "hma_automation_overview.bat" }
+        "Administrador\Estado / Git\Validacion QA completa" { Run-Bat "hma_qa_validation.bat" }
+        "Administrador\Estado / Git\Pausar tarea legacy export" { Run-PS1 "scripts\disable_legacy_client_export_task.ps1" }
         "Administrador\Estado / Git\Activar ciclo completo 12h" { Run-PS1 "scripts\setup_full_cycle_12h_task.ps1" }
         "Administrador\Estado / Git\Pausar ciclo completo 12h" { Run-PS1 "scripts\disable_full_cycle_12h_task.ps1" }
         "Administrador\Estado / Git\Health check sistema" { Run-Bat "hma_health_check.bat" }
