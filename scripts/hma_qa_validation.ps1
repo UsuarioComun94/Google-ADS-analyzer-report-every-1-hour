@@ -91,7 +91,6 @@ $tasks = @(
     "HMA Download Artifacts Every Minute",
     "HMA Error Monitor Every Minute",
     "HMA Promote Pending Master",
-    "HMA Client Ads Export Every 12 Hours",
     "HMA Full Cycle Every 12 Hours",
     "HMA Weekly Local Backup",
     "HMA Weekly Health Check"
@@ -195,3 +194,4 @@ Add-Line "Reporte: $report"
 Add-Line "============================================================"
 
 Start-Process notepad.exe $report
+

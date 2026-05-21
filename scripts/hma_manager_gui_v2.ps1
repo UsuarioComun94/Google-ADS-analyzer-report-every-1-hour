@@ -1,4 +1,4 @@
-Add-Type -AssemblyName System.Windows.Forms
+﻿Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $ErrorActionPreference = "Stop"
@@ -258,7 +258,7 @@ function Show-ClientMetrics {
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "HMA Manager - Dashboard V2"
+$form.Text = "HMA Manager"
 $form.Size = New-Object System.Drawing.Size(1180,720)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
@@ -367,7 +367,6 @@ $adminEstado = Add-ChildNode $adminRoot "Estado / Git"
 [void](Add-ChildNode $adminEstado "Ver ciclo completo 12h")
 [void](Add-ChildNode $adminEstado "Ver todas las automatizaciones")
 [void](Add-ChildNode $adminEstado "Validacion QA completa")
-[void](Add-ChildNode $adminEstado "Pausar tarea legacy export")
 [void](Add-ChildNode $adminEstado "Activar ciclo completo 12h")
 [void](Add-ChildNode $adminEstado "Pausar ciclo completo 12h")
 [void](Add-ChildNode $adminEstado "Health check sistema")
@@ -1134,7 +1133,6 @@ function Render($path) {
             Action "Ver ciclo completo 12h" 300 { Run-PS1 "scripts\status_full_cycle_12h_task.ps1" } "Muestra estado, ultima ejecucion y proxima ejecucion del ciclo completo automatico."
             Action "Ver todas las automatizaciones" 345 { Run-Bat "hma_automation_overview.bat" } "Muestra un reporte general de todas las tareas programadas HMA: estado, ultima ejecucion y proxima ejecucion."
             Action "Validacion QA completa" 390 { Run-Bat "hma_qa_validation.bat" } "Ejecuta una revision general: archivos, dashboard, tareas, clientes, masters, backups y Git."
-            Action "Pausar tarea legacy export" 435 { Run-PS1 "scripts\disable_legacy_client_export_task.ps1" } "Pausa la tarea antigua HMA Client Ads Export Every 12 Hours para evitar duplicidad con el ciclo completo 12h."
             Action "Activar ciclo completo 12h" 345 { Run-PS1 "scripts\setup_full_cycle_12h_task.ps1" } "Programa el ciclo completo cada 12 horas: exportar metricas, construir masters y health check."
             Action "Pausar ciclo completo 12h" 390 { Run-PS1 "scripts\disable_full_cycle_12h_task.ps1" } "Desactiva el ciclo completo automatico cada 12 horas."
             Action "Actualizar todas las plataformas ahora" 255 { Run-Bat "export_all_clients.bat" } "Exporta Google Ads y Meta Ads de todos los clientes conectados. Es la actualizacion global."
@@ -1304,7 +1302,6 @@ function Invoke-ActionPath($actionPath) {
         "Administrador\Estado / Git\Ver ciclo completo 12h" { Run-PS1 "scripts\status_full_cycle_12h_task.ps1" }
         "Administrador\Estado / Git\Ver todas las automatizaciones" { Run-Bat "hma_automation_overview.bat" }
         "Administrador\Estado / Git\Validacion QA completa" { Run-Bat "hma_qa_validation.bat" }
-        "Administrador\Estado / Git\Pausar tarea legacy export" { Run-PS1 "scripts\disable_legacy_client_export_task.ps1" }
         "Administrador\Estado / Git\Activar ciclo completo 12h" { Run-PS1 "scripts\setup_full_cycle_12h_task.ps1" }
         "Administrador\Estado / Git\Pausar ciclo completo 12h" { Run-PS1 "scripts\disable_full_cycle_12h_task.ps1" }
         "Administrador\Estado / Git\Health check sistema" { Run-Bat "hma_health_check.bat" }
@@ -1350,5 +1347,252 @@ $tree.Add_KeyDown({
     }
 })
 
+
+# === HMA MODERN THEME START ===
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+} catch {}
+
+$script:HmaTheme = @{
+    Bg          = [System.Drawing.Color]::FromArgb(6, 18, 42)
+    Bg2         = [System.Drawing.Color]::FromArgb(21, 12, 74)
+    Sidebar     = [System.Drawing.Color]::FromArgb(8, 24, 55)
+    Panel       = [System.Drawing.Color]::FromArgb(10, 30, 68)
+    Card        = [System.Drawing.Color]::FromArgb(13, 40, 90)
+    CardHover   = [System.Drawing.Color]::FromArgb(18, 58, 130)
+    Accent      = [System.Drawing.Color]::FromArgb(43, 156, 255)
+    Accent2     = [System.Drawing.Color]::FromArgb(121, 65, 255)
+    Cyan        = [System.Drawing.Color]::FromArgb(48, 220, 255)
+    Text        = [System.Drawing.Color]::FromArgb(242, 247, 255)
+    Muted       = [System.Drawing.Color]::FromArgb(178, 196, 220)
+    Border      = [System.Drawing.Color]::FromArgb(35, 105, 190)
+}
+
+function Set-HmaRoundedControl {
+    param(
+        [System.Windows.Forms.Control]$Control,
+        [int]$Radius = 14
+    )
+
+    if (-not $Control) { return }
+    if ($Control.Width -le 0 -or $Control.Height -le 0) { return }
+
+    try {
+        $diameter = $Radius * 2
+        $rect = New-Object System.Drawing.Rectangle(0, 0, $Control.Width, $Control.Height)
+        $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+
+        $path.AddArc($rect.X, $rect.Y, $diameter, $diameter, 180, 90)
+        $path.AddArc(($rect.Right - $diameter), $rect.Y, $diameter, $diameter, 270, 90)
+        $path.AddArc(($rect.Right - $diameter), ($rect.Bottom - $diameter), $diameter, $diameter, 0, 90)
+        $path.AddArc($rect.X, ($rect.Bottom - $diameter), $diameter, $diameter, 90, 90)
+        $path.CloseFigure()
+
+        $Control.Region = New-Object System.Drawing.Region($path)
+    } catch {}
+}
+
+function Add-HmaGradientPaint {
+    param([System.Windows.Forms.Control]$Control)
+
+    if (-not $Control) { return }
+
+    $Control.Add_Paint({
+        param($sender, $e)
+
+        try {
+            $rect = $sender.ClientRectangle
+            if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
+
+            $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                $rect,
+                $script:HmaTheme.Bg,
+                $script:HmaTheme.Bg2,
+                [System.Drawing.Drawing2D.LinearGradientMode]::ForwardDiagonal
+            )
+
+            $e.Graphics.FillRectangle($brush, $rect)
+            $brush.Dispose()
+        } catch {}
+    })
+}
+
+function Style-HmaButton {
+    param([System.Windows.Forms.Button]$Button)
+
+    if (-not $Button) { return }
+
+    $Button.UseVisualStyleBackColor = $false
+    $Button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $Button.BackColor = $script:HmaTheme.Card
+    $Button.ForeColor = $script:HmaTheme.Text
+    $Button.Font = New-Object System.Drawing.Font("Segoe UI", 11.5, [System.Drawing.FontStyle]::Bold)
+    $Button.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $Button.FlatAppearance.BorderColor = $script:HmaTheme.Border
+    $Button.FlatAppearance.BorderSize = 1
+    $Button.FlatAppearance.MouseOverBackColor = $script:HmaTheme.CardHover
+    $Button.FlatAppearance.MouseDownBackColor = $script:HmaTheme.Accent2
+
+    if ($Button.Text -eq "?") {
+        $Button.BackColor = [System.Drawing.Color]::FromArgb(18, 55, 120)
+        $Button.ForeColor = $script:HmaTheme.Text
+        $Button.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+        $Button.Width = [Math]::Max($Button.Width, 38)
+    }
+
+    Set-HmaRoundedControl $Button 14
+
+    $Button.Add_Resize({
+        param($sender, $e)
+        Set-HmaRoundedControl $sender 14
+    })
+}
+
+function Style-HmaLabel {
+    param([System.Windows.Forms.Label]$Label)
+
+    if (-not $Label) { return }
+
+    if ($Label.Text -eq "Dashboard V2") {
+        $Label.Text = ""
+        return
+    }
+
+    $Label.BackColor = [System.Drawing.Color]::Transparent
+    $Label.ForeColor = $script:HmaTheme.Muted
+
+    if ($Label.Text -eq "HMA Manager") {
+        $Label.ForeColor = $script:HmaTheme.Cyan
+        $Label.Font = New-Object System.Drawing.Font("Segoe UI", 19, [System.Drawing.FontStyle]::Bold)
+        return
+    }
+
+    if ($Label.Font.Bold -or $Label.Font.Size -ge 13) {
+        $Label.ForeColor = $script:HmaTheme.Text
+        $newSize = [Math]::Max($Label.Font.Size + 2, 15)
+        $Label.Font = New-Object System.Drawing.Font("Segoe UI", $newSize, [System.Drawing.FontStyle]::Bold)
+    } else {
+        $newSize = [Math]::Max($Label.Font.Size + 1, 10.5)
+        $Label.Font = New-Object System.Drawing.Font("Segoe UI", $newSize, [System.Drawing.FontStyle]::Regular)
+    }
+}
+
+function Style-HmaTree {
+    param([System.Windows.Forms.TreeView]$Tree)
+
+    if (-not $Tree) { return }
+
+    $Tree.BackColor = $script:HmaTheme.Sidebar
+    $Tree.ForeColor = $script:HmaTheme.Text
+    $Tree.LineColor = $script:HmaTheme.Border
+    $Tree.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $Tree.Font = New-Object System.Drawing.Font("Segoe UI", 11.5, [System.Drawing.FontStyle]::Regular)
+    $Tree.HideSelection = $false
+    $Tree.ShowLines = $true
+    $Tree.ShowPlusMinus = $true
+    $Tree.ShowRootLines = $true
+    $Tree.ItemHeight = 27
+}
+
+function Style-HmaControl {
+    param([System.Windows.Forms.Control]$Control)
+
+    if (-not $Control) { return }
+
+    if ($Control -is [System.Windows.Forms.Form]) {
+        $Control.Text = "HMA Manager"
+        $Control.BackColor = $script:HmaTheme.Bg
+        $Control.ForeColor = $script:HmaTheme.Text
+        $Control.Font = New-Object System.Drawing.Font("Segoe UI", 10.5, [System.Drawing.FontStyle]::Regular)
+
+        if ($Control.Width -lt 1200 -or $Control.Height -lt 760) {
+            $Control.Size = New-Object System.Drawing.Size(1240, 780)
+        }
+
+        Add-HmaGradientPaint $Control
+    }
+    elseif ($Control -is [System.Windows.Forms.TreeView]) {
+        Style-HmaTree $Control
+    }
+    elseif ($Control -is [System.Windows.Forms.Button]) {
+        Style-HmaButton $Control
+    }
+    elseif ($Control -is [System.Windows.Forms.Label]) {
+        Style-HmaLabel $Control
+    }
+    elseif ($Control -is [System.Windows.Forms.Panel]) {
+        $Control.BackColor = $script:HmaTheme.Panel
+        $Control.ForeColor = $script:HmaTheme.Text
+        $Control.Padding = New-Object System.Windows.Forms.Padding(14)
+        Set-HmaRoundedControl $Control 16
+
+        $Control.Add_Resize({
+            param($sender, $e)
+            Set-HmaRoundedControl $sender 16
+        })
+    }
+    elseif ($Control -is [System.Windows.Forms.TextBox]) {
+        $Control.BackColor = [System.Drawing.Color]::FromArgb(9, 26, 58)
+        $Control.ForeColor = $script:HmaTheme.Text
+        $Control.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        $Control.Font = New-Object System.Drawing.Font("Segoe UI", 10.5, [System.Drawing.FontStyle]::Regular)
+    }
+    elseif ($Control -is [System.Windows.Forms.ComboBox]) {
+        $Control.BackColor = [System.Drawing.Color]::FromArgb(9, 26, 58)
+        $Control.ForeColor = $script:HmaTheme.Text
+        $Control.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $Control.Font = New-Object System.Drawing.Font("Segoe UI", 10.5, [System.Drawing.FontStyle]::Regular)
+    }
+    else {
+        $Control.BackColor = $script:HmaTheme.Bg
+        $Control.ForeColor = $script:HmaTheme.Text
+    }
+
+    foreach ($child in $Control.Controls) {
+        Style-HmaControl $child
+    }
+}
+
+function Register-HmaAutoTheme {
+    param([System.Windows.Forms.Control]$Control)
+
+    if (-not $Control) { return }
+
+    $Control.Add_ControlAdded({
+        param($sender, $e)
+
+        Start-Sleep -Milliseconds 20
+        Style-HmaControl $e.Control
+        Register-HmaAutoTheme $e.Control
+    })
+
+    foreach ($child in $Control.Controls) {
+        Register-HmaAutoTheme $child
+    }
+}
+
+function Enable-HmaModernTheme {
+    param([System.Windows.Forms.Form]$TargetForm)
+
+    if (-not $TargetForm) { return }
+
+    Style-HmaControl $TargetForm
+    Register-HmaAutoTheme $TargetForm
+
+    $TargetForm.Add_Shown({
+        param($sender, $e)
+        Style-HmaControl $sender
+        $sender.Invalidate()
+    })
+}
+
+if ($form) {
+    Enable-HmaModernTheme $form
+}
+# === HMA MODERN THEME END ===
+
+
 Render ""
 [void]$form.ShowDialog()
+
