@@ -104,3 +104,9 @@ if (Test-Path $CleanupScript) {
 Log "=== HMA BACKUP END ==="
 
 if (-not $Silent) { Start-Process explorer.exe $BackupRoot }
+
+
+if (Test-Path $zipPath) {
+    Remove-Item $backupDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
