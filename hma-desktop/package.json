@@ -1,0 +1,25 @@
+﻿{
+  "name": "hma-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HMA Manager local desktop dashboard",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "vite build",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "electron": "latest",
+    "concurrently": "latest",
+    "wait-on": "latest",
+    "lucide-react": "latest",
+    "framer-motion": "latest",
+    "recharts": "latest"
+  },
+  "devDependencies": {}
+}

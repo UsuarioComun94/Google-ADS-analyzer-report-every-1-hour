@@ -94,3 +94,20 @@ backups/HMA_BACKUP_*/
 backups/pre_restore/
 
 # HMA diagnostics generated reports
+
+# HMA runtime / generated files
+diagnosticos/
+
+# HMA Electron
+hma-desktop/node_modules/
+hma-desktop/dist/
+hma-desktop/.vite/
+hma-desktop/.runtime/
+
+# Temporary patch backups
+*.backup_fix_*
+*.backup_no_*
+*.backup_particles_*
+*.backup_report_frequency_*
+package_backup_*.json
+vite_config_backup_*.js
