@@ -89,6 +89,10 @@ jobs:
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+          token: ${{ github.token }}
 
       - name: Configurar Python
         uses: actions/setup-python@v5
