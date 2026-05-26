@@ -19,6 +19,10 @@ GITHUB_REF_NAME = os.getenv("GITHUB_REF_NAME", "main")
 REPORT_TIMEZONE = os.getenv("REPORT_TIMEZONE", "America/Argentina/Cordoba")
 CLIENT_NUMBER = os.getenv("CLIENT_NUMBER", "CLIENTE-DEMO-0001")
 REPORT_SUFFIX = os.getenv("REPORT_SUFFIX", "JPPQ")
+HMA_BACKFILL_TARGET_DATE = os.getenv("HMA_BACKFILL_TARGET_DATE", "").strip()
+HMA_BACKFILL_TARGET_HOUR = os.getenv("HMA_BACKFILL_TARGET_HOUR", "").strip()
+HMA_FORCE_BACKFILL_RAW = os.getenv("HMA_FORCE_BACKFILL", "false").strip().lower()
+HMA_FORCE_BACKFILL = HMA_FORCE_BACKFILL_RAW in {"1", "true", "yes", "y", "si"}
 
 
 def set_output(name: str, value: str) -> None:
@@ -35,24 +39,63 @@ def safe_one_line(value: str) -> str:
     return str(value).replace("\n", " ").replace("\r", " ").strip()
 
 
+def parse_backfill_hour(value: str) -> int:
+    clean_value = str(value).strip()
+
+    if not clean_value:
+        raise ValueError("target_hour empty.")
+
+    clean_value = clean_value.replace("-00", "").replace(":00", "")
+
+    hour = int(clean_value)
+
+    if hour < 0 or hour > 23:
+        raise ValueError("target_hour must be between 00 and 23.")
+
+    return hour
+
+
 def target_context() -> dict:
     timezone = ZoneInfo(REPORT_TIMEZONE)
-    now = datetime.now(timezone)
-    hour_start = now.replace(minute=0, second=0, microsecond=0)
+
+    if HMA_FORCE_BACKFILL:
+        if not HMA_BACKFILL_TARGET_DATE or not HMA_BACKFILL_TARGET_HOUR:
+            raise ValueError(
+                "HMA_FORCE_BACKFILL=true requires HMA_BACKFILL_TARGET_DATE and HMA_BACKFILL_TARGET_HOUR."
+            )
+
+        target_date = datetime.strptime(HMA_BACKFILL_TARGET_DATE, "%Y-%m-%d").date()
+        target_hour = parse_backfill_hour(HMA_BACKFILL_TARGET_HOUR)
+
+        hour_start = datetime(
+            target_date.year,
+            target_date.month,
+            target_date.day,
+            target_hour,
+            0,
+            0,
+            0,
+            tzinfo=timezone,
+        )
+    else:
+        now = datetime.now(timezone)
+        hour_start = now.replace(minute=0, second=0, microsecond=0)
+
     hour_end = hour_start + timedelta(hours=1)
 
     date_slug = hour_start.strftime("%Y-%m-%d")
     hour_slug = hour_start.strftime("%H-00")
-    target_hour = hour_start.isoformat(timespec="minutes")
+    target_hour_iso = hour_start.isoformat(timespec="minutes")
     artifact_name = f"Campania_{CLIENT_NUMBER}_{date_slug}_{hour_slug}_{REPORT_SUFFIX}"
 
     return {
         "timezone": timezone,
         "hour_start": hour_start,
         "hour_end": hour_end,
-        "target_hour": target_hour,
+        "target_hour": target_hour_iso,
         "target_hour_slug": f"{date_slug}_{hour_slug}",
         "artifact_name": artifact_name,
+        "is_backfill": HMA_FORCE_BACKFILL,
     }
 
 
@@ -221,6 +264,7 @@ def main() -> None:
     print(f"Target hour: {ctx['target_hour']}")
     print(f"Target hour slug: {ctx['target_hour_slug']}")
     print(f"Expected artifact name: {ctx['artifact_name']}")
+    print(f"Backfill mode: {ctx.get('is_backfill', False)}")
     print(f"Current run id: {GITHUB_RUN_ID}")
     print(f"Workflow file: {GITHUB_WORKFLOW_FILE}")
     print(f"Repository: {GITHUB_REPOSITORY}")

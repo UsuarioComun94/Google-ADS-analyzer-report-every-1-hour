@@ -1,4 +1,4 @@
-﻿name: HMA Hourly Demo
+name: HMA Hourly Demo
 
 run-name: HMA ${{ github.event_name }} run-${{ github.run_number }}
 
@@ -64,6 +64,24 @@ on:
         default: "30000"
         type: string
 
+      target_date:
+        description: "Backfill optional. Target date YYYY-MM-DD. Leave empty for normal run."
+        required: false
+        default: ""
+        type: string
+
+      target_hour:
+        description: "Backfill optional. Target hour 00-23. Leave empty for normal run."
+        required: false
+        default: ""
+        type: string
+
+      force_backfill:
+        description: "Allow manual historical slot generation when deterministic artifact does not exist."
+        required: false
+        default: false
+        type: boolean
+
 permissions:
   contents: read
   actions: read
@@ -85,6 +103,9 @@ jobs:
       ROAS_THRESHOLD: ${{ inputs.roas_threshold || vars.ROAS_THRESHOLD || '1.5' }}
       CTR_THRESHOLD: ${{ inputs.ctr_threshold || vars.CTR_THRESHOLD || '1.0' }}
       DAILY_BUDGET_USD: ${{ inputs.daily_budget_usd || vars.DAILY_BUDGET_USD || '30000' }}
+      HMA_BACKFILL_TARGET_DATE: ${{ inputs.target_date || '' }}
+      HMA_BACKFILL_TARGET_HOUR: ${{ inputs.target_hour || '' }}
+      HMA_FORCE_BACKFILL: ${{ inputs.force_backfill || 'false' }}
 
     steps:
       - name: Descargar repositorio
@@ -110,6 +131,9 @@ jobs:
           CLIENT_NUMBER: ${{ env.CLIENT_NUMBER }}
           REPORT_SUFFIX: ${{ env.REPORT_SUFFIX }}
           REPORT_TIMEZONE: ${{ env.REPORT_TIMEZONE }}
+          HMA_BACKFILL_TARGET_DATE: ${{ env.HMA_BACKFILL_TARGET_DATE }}
+          HMA_BACKFILL_TARGET_HOUR: ${{ env.HMA_BACKFILL_TARGET_HOUR }}
+          HMA_FORCE_BACKFILL: ${{ env.HMA_FORCE_BACKFILL }}
         run: python scripts/hma_github_hourly_gate.py
 
       - name: Reporte de decisiÃ³n del gate
@@ -148,6 +172,9 @@ jobs:
           echo "ROAS_THRESHOLD=$ROAS_THRESHOLD"
           echo "CTR_THRESHOLD=$CTR_THRESHOLD"
           echo "DAILY_BUDGET_USD=$DAILY_BUDGET_USD"
+          echo "HMA_BACKFILL_TARGET_DATE=$HMA_BACKFILL_TARGET_DATE"
+          echo "HMA_BACKFILL_TARGET_HOUR=$HMA_BACKFILL_TARGET_HOUR"
+          echo "HMA_FORCE_BACKFILL=$HMA_FORCE_BACKFILL"
           echo "HMA_TARGET_HOUR=${{ steps.hourly_gate.outputs.target_hour }}"
           echo "HMA_TARGET_HOUR_SLUG=${{ steps.hourly_gate.outputs.target_hour_slug }}"
 
@@ -158,6 +185,9 @@ jobs:
         env:
           HMA_TARGET_HOUR: ${{ steps.hourly_gate.outputs.target_hour }}
           HMA_TARGET_HOUR_SLUG: ${{ steps.hourly_gate.outputs.target_hour_slug }}
+          HMA_BACKFILL_TARGET_DATE: ${{ env.HMA_BACKFILL_TARGET_DATE }}
+          HMA_BACKFILL_TARGET_HOUR: ${{ env.HMA_BACKFILL_TARGET_HOUR }}
+          HMA_FORCE_BACKFILL: ${{ env.HMA_FORCE_BACKFILL }}
         run: python scripts/hma_demo.py
 
       - name: Verificar archivos generados

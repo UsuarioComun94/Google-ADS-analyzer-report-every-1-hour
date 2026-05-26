@@ -55,7 +55,21 @@ logging.basicConfig(
 
 
 def get_local_now() -> dt.datetime:
-    return dt.datetime.now(ZoneInfo(REPORT_TIMEZONE))
+    target_hour = os.getenv("HMA_TARGET_HOUR", "").strip()
+    timezone = ZoneInfo(REPORT_TIMEZONE)
+
+    if target_hour:
+        try:
+            parsed = dt.datetime.fromisoformat(target_hour)
+
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone)
+
+            return parsed.astimezone(timezone)
+        except ValueError as exc:
+            raise ValueError(f"HMA_TARGET_HOUR invalid: {target_hour}") from exc
+
+    return dt.datetime.now(timezone)
 
 
 def safe_div(numerator: float, denominator: float) -> float:
